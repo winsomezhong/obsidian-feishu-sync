@@ -139,5 +139,29 @@ describe('FeishuCliBridge', () => {
         expect(result.errorCode).toBe('AUTH_REQUIRED');
       }
     });
+
+    it('handles version output without semver string', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli (unknown version)\n', ''))
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'ready' } }), ''));
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cliVersion).toBeUndefined();
+      }
+    });
+
+    it('handles malformed auth status JSON', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'not json\n', ''));
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('AUTH_CHECK_FAILED');
+      }
+    });
   });
 });

@@ -98,7 +98,12 @@ export class FeishuCliBridge {
       const cliVersion = versionMatch ? versionMatch[0] : undefined;
 
       const authOutput = await this.executeCommand(`${this.config.cliPath} auth status`);
-      const authData = JSON.parse(authOutput);
+      let authData: any;
+      try {
+        authData = JSON.parse(authOutput);
+      } catch {
+        return { success: false, error: 'Failed to parse auth status', errorCode: 'AUTH_CHECK_FAILED' };
+      }
       const authReady = authData?.data?.status === 'ready';
 
       if (!authReady) {

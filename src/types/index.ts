@@ -4,5 +4,5 @@ export interface DocumentResult {
 }
 
 export type PreflightResult =
-  | { success: true; cliVersion: string; authReady: boolean }
+  | { success: true; cliVersion?: string; authReady: boolean }
   | { success: false; error: string; errorCode?: string };
