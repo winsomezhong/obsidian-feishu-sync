@@ -40,6 +40,7 @@ function createMockDeps() {
       deleteFile: vi.fn(),
       moveFile: vi.fn(),
       createFolder: vi.fn(),
+      findSubfolder: vi.fn(),
     } as any,
     tracker: {
       getFileState: vi.fn(),
@@ -147,31 +148,43 @@ describe('SyncEngine', () => {
     it('returns root token for file at vault root', async () => {
       const result = await engine.ensureFolderPath('README.md');
       expect(result).toBe('root-token');
+      expect(deps.bridge.findSubfolder).not.toHaveBeenCalled();
       expect(deps.bridge.createFolder).not.toHaveBeenCalled();
     });
 
-    it('creates single folder and caches token', async () => {
-      deps.bridge.createFolder.mockResolvedValue('fld_notes');
+    it('reuses existing folder when found', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue('fld_notes');
       const result = await engine.ensureFolderPath('notes/todo.md');
       expect(result).toBe('fld_notes');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'notes');
+      expect(deps.bridge.createFolder).not.toHaveBeenCalled();
+    });
+
+    it('creates folder when not found', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('fld_new');
+      const result = await engine.ensureFolderPath('notes/todo.md');
+      expect(result).toBe('fld_new');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'notes');
       expect(deps.bridge.createFolder).toHaveBeenCalledWith('root-token', 'notes');
     });
 
     it('uses cache for second call with same directory', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue(null);
       deps.bridge.createFolder.mockResolvedValue('fld_notes');
       await engine.ensureFolderPath('notes/a.md');
       await engine.ensureFolderPath('notes/b.md');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledTimes(1);
       expect(deps.bridge.createFolder).toHaveBeenCalledTimes(1);
     });
 
-    it('creates nested folders in order', async () => {
-      deps.bridge.createFolder
+    it('reuses nested existing folders', async () => {
+      deps.bridge.findSubfolder
         .mockResolvedValueOnce('fld_projects')
         .mockResolvedValueOnce('fld_client');
       const result = await engine.ensureFolderPath('projects/client/spec.md');
       expect(result).toBe('fld_client');
-      expect(deps.bridge.createFolder).toHaveBeenNthCalledWith(1, 'root-token', 'projects');
-      expect(deps.bridge.createFolder).toHaveBeenNthCalledWith(2, 'fld_projects', 'client');
+      expect(deps.bridge.createFolder).not.toHaveBeenCalled();
     });
   });
 

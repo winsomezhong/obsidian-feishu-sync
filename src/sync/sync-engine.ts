@@ -60,7 +60,12 @@ export class SyncEngine {
         currentParentToken = cached;
         continue;
       }
-      currentParentToken = await this.bridge.createFolder(currentParentToken, segment);
+      const existing = await this.bridge.findSubfolder(currentParentToken, segment);
+      if (existing) {
+        currentParentToken = existing;
+      } else {
+        currentParentToken = await this.bridge.createFolder(currentParentToken, segment);
+      }
       this.folderCache.set(currentPath, currentParentToken);
     }
 

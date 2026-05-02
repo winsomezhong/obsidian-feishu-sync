@@ -158,6 +158,18 @@ export class FeishuCliBridge {
     });
   }
 
+  async findSubfolder(parentToken: string, folderName: string): Promise<string | null> {
+    const params = JSON.stringify({ folder_token: parentToken });
+    const cmd = `${this.config.cliPath} drive files list --params '${params}' --page-all`;
+    return this.withRetry(async () => {
+      const stdout = await this.executeCommand(cmd);
+      const files = JSON.parse(stdout).data?.files;
+      if (!files || !Array.isArray(files)) return null;
+      const found = files.find((f: any) => f.name === folderName && f.type === 'folder');
+      return found ? found.token : null;
+    });
+  }
+
   async deleteFile(fileToken: string): Promise<void> {
     const cmd = `${this.config.cliPath} drive +delete --file-token "${fileToken}" --type file --yes`;
     await this.withRetry(() => this.executeCommand(cmd));

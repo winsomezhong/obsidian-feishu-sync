@@ -244,6 +244,55 @@ describe('FeishuCliBridge', () => {
     });
   });
 
+  describe('findSubfolder', () => {
+    it('returns folder token when matching folder found', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'Clippings', token: 'fld_existing', type: 'folder' },
+              { name: 'note.md', token: 'ftok_note', type: 'file' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.findSubfolder('parentToken', 'Clippings');
+      expect(result).toBe('fld_existing');
+    });
+
+    it('returns null when no matching folder found', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'note.md', token: 'ftok_note', type: 'file' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.findSubfolder('parentToken', 'Nonexistent');
+      expect(result).toBeNull();
+    });
+
+    it('constructs correct list command with folder token', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, JSON.stringify({ data: { files: [] } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.findSubfolder('parent123', 'test');
+      expect(usedCommand).toContain('drive files list');
+      expect(usedCommand).toContain("'{\"folder_token\":\"parent123\"}'");
+      expect(usedCommand).toContain('--page-all');
+    });
+  });
+
   describe('deleteFile', () => {
     it('resolves without error on success', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
