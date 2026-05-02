@@ -3,7 +3,7 @@ import path from 'path';
 
 export interface FileSyncState {
   localPath: string;
-  feishuDocToken: string;
+  feishuFileToken: string;
   lastSyncedAt: number;
   lastLocalMtime: number;
 }
@@ -24,10 +24,25 @@ export class SyncStatusTracker {
   private load(): void {
     try {
       const raw = fs.readFileSync(this.dataPath, 'utf-8');
-      this.state = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (this.hasLegacyDocTokens(parsed)) {
+        console.warn('Feishu Sync: detected legacy feishuDocToken state, clearing for migration');
+        this.state = { files: {} };
+        this.save();
+        return;
+      }
+      this.state = parsed;
     } catch {
       this.state = { files: {} };
     }
+  }
+
+  private hasLegacyDocTokens(parsed: any): boolean {
+    const files = parsed?.files;
+    if (!files || typeof files !== 'object') return false;
+    return Object.values(files).some(
+      (entry: any) => entry && 'feishuDocToken' in entry,
+    );
   }
 
   private save(): void {
@@ -36,10 +51,10 @@ export class SyncStatusTracker {
     fs.writeFileSync(this.dataPath, JSON.stringify(this.state, null, 2), 'utf-8');
   }
 
-  updateFileState(localPath: string, docToken: string, mtime: number): void {
+  updateFileState(localPath: string, fileToken: string, mtime: number): void {
     this.state.files[localPath] = {
       localPath,
-      feishuDocToken: docToken,
+      feishuFileToken: fileToken,
       lastSyncedAt: Date.now(),
       lastLocalMtime: mtime,
     };
