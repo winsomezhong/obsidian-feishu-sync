@@ -19,17 +19,18 @@ export class SyncEngine {
   start(): void {
     if (this.running) return;
     this.running = true;
+    const vault = this.plugin.app.vault;
     this.plugin.registerEvent(
-      this.plugin.app.vault.on('modify', (file: TFile) => this.onFileChange(file)),
+      (vault.on as any)('modify', (file: TFile) => this.onFileChange(file)),
     );
     this.plugin.registerEvent(
-      this.plugin.app.vault.on('create', (file: TFile) => this.onFileChange(file)),
+      (vault.on as any)('create', (file: TFile) => this.onFileChange(file)),
     );
     this.plugin.registerEvent(
-      this.plugin.app.vault.on('delete', (file: TFile) => this.onFileDelete(file)),
+      (vault.on as any)('delete', (file: TFile) => this.onFileDelete(file)),
     );
     this.plugin.registerEvent(
-      this.plugin.app.vault.on('rename', (file: TFile, oldPath: string) => this.onFileRename(file, oldPath)),
+      (vault.on as any)('rename', (file: TFile, oldPath: string) => this.onFileRename(file, oldPath)),
     );
   }
 
@@ -122,6 +123,15 @@ export class SyncEngine {
     if (state) {
       this.tracker.removeFileState(oldPath);
       this.tracker.updateFileState(file.path, state.feishuDocToken, file.stat.mtime);
+      // Update Feishu document title to reflect new filename
+      try {
+        const title = file.name.replace(/\.md$/, '');
+        const content = await this.plugin.app.vault.read(file);
+        const { content: processedContent } = this.preprocessor.process(content);
+        await this.bridge.updateDocument(state.feishuDocToken, `# ${title}\n\n${processedContent}`);
+      } catch (err) {
+        console.error(`Failed to update Feishu title for ${file.path}:`, err);
+      }
     }
   }
 }

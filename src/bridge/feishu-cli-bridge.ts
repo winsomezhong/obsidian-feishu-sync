@@ -48,7 +48,7 @@ export class RateLimitError extends Error {
 
 export interface CliBridgeConfig {
   timeoutMs: number;
-  cliPath: string;
+  cliPath?: string;
 }
 
 const DEFAULT_CONFIG: CliBridgeConfig = {
@@ -57,7 +57,9 @@ const DEFAULT_CONFIG: CliBridgeConfig = {
 };
 
 export class FeishuCliBridge {
-  constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {}
+  constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {
+    if (!this.config.cliPath) this.config.cliPath = DEFAULT_CONFIG.cliPath;
+  }
 
   executeCommand(command: string, input?: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -70,7 +72,7 @@ export class FeishuCliBridge {
             reject(new CliNotFoundError(`Command not found: ${command.split(' ')[0]}`));
             return;
           }
-          if (nodeErr.killed || (err.message && err.message.includes('timeout'))) {
+          if ((err as any).killed || (err.message && err.message.includes('timeout'))) {
             reject(new TimeoutError(this.config.timeoutMs, fullCmd));
             return;
           }
