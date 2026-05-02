@@ -61,9 +61,11 @@ export class FeishuCliBridge {
     if (!this.config.cliPath) this.config.cliPath = DEFAULT_CONFIG.cliPath;
   }
 
-  executeCommand(command: string): Promise<string> {
+  executeCommand(command: string, cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = exec(command, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
+      const opts: any = { encoding: 'utf-8', timeout: this.config.timeoutMs };
+      if (cwd) opts.cwd = cwd;
+      const child = exec(command, opts, (err, stdout, stderr) => {
         if (err) {
           const nodeErr = err as NodeJS.ErrnoException;
           if (nodeErr.code === 'ENOENT' || (err.message && err.message.includes('not found'))) {
@@ -139,10 +141,10 @@ export class FeishuCliBridge {
     });
   }
 
-  async uploadFile(localPath: string, folderToken: string, fileName: string): Promise<UploadResult> {
+  async uploadFile(localPath: string, folderToken: string, fileName: string, cwd?: string): Promise<UploadResult> {
     const cmd = `${this.config.cliPath} drive +upload --file "${localPath}" --folder-token "${folderToken}" --name "${fileName}"`;
     return this.withRetry(async () => {
-      const stdout = await this.executeCommand(cmd);
+      const stdout = await this.executeCommand(cmd, cwd);
       const data = JSON.parse(stdout).data;
       return { fileToken: data.file_token, url: data.url };
     });

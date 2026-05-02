@@ -79,9 +79,9 @@ export class SyncEngine {
     if (decision === 'skip') return;
 
     const folderToken = await this.ensureFolderPath(file.path);
-    const localPath = (this.plugin.app.vault.adapter as any).getFullPath(file.path);
+    const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
 
-    const result = await this.bridge.uploadFile(localPath, folderToken, file.name);
+    const result = await this.bridge.uploadFile(file.path, folderToken, file.name, vaultBasePath);
     this.tracker.updateFileState(file.path, result.fileToken, file.stat.mtime);
   }
 

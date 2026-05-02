@@ -76,6 +76,30 @@ describe('FeishuCliBridge', () => {
       expect(result).toBe('{"data": "ok"}');
     });
 
+    it('passes cwd option to exec when provided', async () => {
+      let receivedOpts: any;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        receivedOpts = opts;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.executeCommand('some-cmd', '/my/vault');
+      expect(receivedOpts.cwd).toBe('/my/vault');
+    });
+
+    it('does not set cwd in exec options when not provided', async () => {
+      let receivedOpts: any;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        receivedOpts = opts;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.executeCommand('some-cmd');
+      expect(receivedOpts.cwd).toBeUndefined();
+    });
+
     it('throws CliNotFoundError when ENOENT', async () => {
       const err = new Error('not found');
       (err as any).code = 'ENOENT';
@@ -170,24 +194,27 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      const result = await bridge.uploadFile('/local/path/note.md', 'folderABC', 'note.md');
+      const result = await bridge.uploadFile('notes/hello.md', 'folderABC', 'hello.md', '/my/vault');
       expect(result.fileToken).toBe('ftok123');
       expect(result.url).toBe('https://drive.feishu.cn/file/ftok123');
     });
 
-    it('constructs correct command with file path and folder token', async () => {
+    it('constructs correct command with relative file path and cwd', async () => {
       let usedCommand = '';
+      let usedOpts: any;
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         usedCommand = cmd;
+        usedOpts = opts;
         cb(null, JSON.stringify({ data: { file_token: 'ftok', url: '' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await bridge.uploadFile('/vault/notes/hello.md', 'parentToken', 'hello.md');
+      await bridge.uploadFile('notes/hello.md', 'parentToken', 'hello.md', '/my/vault');
       expect(usedCommand).toContain('drive +upload');
-      expect(usedCommand).toContain('--file "/vault/notes/hello.md"');
+      expect(usedCommand).toContain('--file "notes/hello.md"');
       expect(usedCommand).toContain('--folder-token "parentToken"');
       expect(usedCommand).toContain('--name "hello.md"');
+      expect(usedOpts.cwd).toBe('/my/vault');
     });
   });
 
@@ -283,7 +310,7 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      const resultPromise = bridge.uploadFile('/f.md', 'fld', 'f.md');
+      const resultPromise = bridge.uploadFile('f.md', 'fld', 'f.md', '/vault');
       await vi.advanceTimersByTimeAsync(3000);
       await vi.advanceTimersByTimeAsync(10000);
       const result = await resultPromise;
@@ -300,7 +327,7 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await expect(bridge.uploadFile('/f.md', 'fld', 'f.md')).rejects.toThrow(CliNotFoundError);
+      await expect(bridge.uploadFile('f.md', 'fld', 'f.md', '/vault')).rejects.toThrow(CliNotFoundError);
     });
   });
 });

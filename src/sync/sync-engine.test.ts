@@ -9,7 +9,7 @@ const mockVaultOn = vi.fn();
 const mockVaultRead = vi.fn();
 const mockGetMarkdownFiles = vi.fn();
 const mockRegisterEvent = vi.fn();
-const mockAdapterGetFullPath = vi.fn();
+const mockAdapterGetBasePath = vi.fn();
 
 vi.mock('../bridge/feishu-cli-bridge', () => ({ FeishuCliBridge: class MockBridge {} }));
 vi.mock('./sync-status-tracker', () => ({ SyncStatusTracker: class MockTracker {} }));
@@ -26,7 +26,7 @@ function createMockPlugin() {
         read: mockVaultRead,
         getMarkdownFiles: mockGetMarkdownFiles,
         adapter: {
-          getFullPath: mockAdapterGetFullPath,
+          getBasePath: mockAdapterGetBasePath,
         },
       },
     },
@@ -91,14 +91,14 @@ describe('SyncEngine', () => {
       } as any;
       deps.tracker.getFileState.mockReturnValue(null);
       deps.resolver.resolve.mockReturnValue('needs-sync');
-      mockAdapterGetFullPath.mockReturnValue('/vault/notes/tech.md');
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
       deps.bridge.createFolder.mockResolvedValue('folderXYZ');
       deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok1', url: '' });
 
       await engine.syncFile(mockFile);
 
       expect(deps.bridge.createFolder).toHaveBeenCalledWith('root-token', 'notes');
-      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('/vault/notes/tech.md', 'folderXYZ', 'tech.md');
+      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('notes/tech.md', 'folderXYZ', 'tech.md', '/my/vault');
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok1', 1000);
     });
 
@@ -111,13 +111,13 @@ describe('SyncEngine', () => {
       } as any;
       deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
       deps.resolver.resolve.mockReturnValue('needs-sync');
-      mockAdapterGetFullPath.mockReturnValue('/vault/notes/tech.md');
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
       deps.bridge.createFolder.mockResolvedValue('folderXYZ');
       deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok2', url: '' });
 
       await engine.syncFile(mockFile);
 
-      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('/vault/notes/tech.md', 'folderXYZ', 'tech.md');
+      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('notes/tech.md', 'folderXYZ', 'tech.md', '/my/vault');
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok2', 2000);
     });
 
