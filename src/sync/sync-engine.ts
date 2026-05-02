@@ -83,6 +83,10 @@ export class SyncEngine {
     const decision = this.resolver.resolve(file.stat.mtime, state);
     if (decision === 'skip') return;
 
+    if (state?.feishuFileToken) {
+      await this.bridge.deleteFile(state.feishuFileToken);
+    }
+
     const folderToken = await this.ensureFolderPath(file.path);
     const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
 

@@ -103,7 +103,7 @@ describe('SyncEngine', () => {
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok1', 1000);
     });
 
-    it('re-uploads when state exists', async () => {
+    it('deletes old file then re-uploads when state exists', async () => {
       const mockFile = {
         path: 'notes/tech.md',
         name: 'tech.md',
@@ -118,6 +118,7 @@ describe('SyncEngine', () => {
 
       await engine.syncFile(mockFile);
 
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok1');
       expect(deps.bridge.uploadFile).toHaveBeenCalledWith('notes/tech.md', 'folderXYZ', 'tech.md', '/my/vault');
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok2', 2000);
     });
