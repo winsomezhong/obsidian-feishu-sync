@@ -5,7 +5,7 @@ import {
   TimeoutError,
   ApiError,
   RateLimitError,
-} from '../../src/bridge/feishu-cli-bridge';
+} from './feishu-cli-bridge';
 
 describe('FeishuCliBridge errors', () => {
   it('CliNotFoundError has correct name and message', () => {
