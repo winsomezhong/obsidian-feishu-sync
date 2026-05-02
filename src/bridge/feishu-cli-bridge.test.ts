@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { exec } from 'child_process';
 import {
   CliNotFoundError,
   AuthRequiredError,
   TimeoutError,
   ApiError,
   RateLimitError,
+  FeishuCliBridge,
 } from './feishu-cli-bridge';
 
 describe('FeishuCliBridge errors', () => {
@@ -44,5 +46,20 @@ describe('FeishuCliBridge errors', () => {
     expect(new TimeoutError(0, '')).toBeInstanceOf(Error);
     expect(new ApiError(0, '', '')).toBeInstanceOf(Error);
     expect(new RateLimitError(0, '')).toBeInstanceOf(Error);
+  });
+});
+
+describe('FeishuCliBridge', () => {
+  describe('executeCommand', () => {
+    it('executes command and returns stdout on success', async () => {
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.executeCommand('echo hello');
+      expect(result.trim()).toBe('hello');
+    });
+
+    it('throws CliNotFoundError when command does not exist', async () => {
+      const bridge = new FeishuCliBridge({ timeoutMs: 5000, cliPath: 'nonexistent-cli-binary' });
+      await expect(bridge.executeCommand('nonexistent-command-xyz')).rejects.toThrow(CliNotFoundError);
+    });
   });
 });
