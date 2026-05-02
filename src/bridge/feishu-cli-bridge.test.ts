@@ -164,4 +164,47 @@ describe('FeishuCliBridge', () => {
       }
     });
   });
+
+  describe('createDocument', () => {
+    it('returns documentId and URL', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { document_id: 'doc456', url: 'https://feishu.cn/doc/doc456' } }), '');
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.createDocument('My Title', '# Content', 'folder123');
+      expect(result.documentId).toBe('doc456');
+      expect(result.url).toBe('https://feishu.cn/doc/doc456');
+    });
+  });
+
+  describe('updateDocument', () => {
+    it('succeeds', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.updateDocument('doc456', '# Updated')).resolves.not.toThrow();
+    });
+  });
+
+  describe('deleteDocument', () => {
+    it('succeeds', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.deleteDocument('doc456')).resolves.not.toThrow();
+    });
+  });
+
+  describe('fetchDocument', () => {
+    it('returns markdown content', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '# Hello from Feishu\n\nContent', '');
+      });
+      const bridge = new FeishuCliBridge();
+      const content = await bridge.fetchDocument('doc456');
+      expect(content).toContain('# Hello from Feishu');
+    });
+  });
 });

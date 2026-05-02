@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import type { PreflightResult } from '../types';
+import type { DocumentResult, PreflightResult } from '../types';
 
 export class CliNotFoundError extends Error {
   name = 'CliNotFoundError';
@@ -117,5 +117,27 @@ export class FeishuCliBridge {
       }
       throw err;
     }
+  }
+
+  async createDocument(title: string, content: string, folderToken: string): Promise<DocumentResult> {
+    const cmd = `${this.config.cliPath} docs +create --api-version v2 --doc-format markdown --parent-token ${folderToken}`;
+    const stdout = await this.executeCommand(cmd);
+    const data = JSON.parse(stdout).data;
+    return { documentId: data.document_id, url: data.url };
+  }
+
+  async updateDocument(docToken: string, content: string): Promise<void> {
+    const cmd = `${this.config.cliPath} docs +update --api-version v2 --doc ${docToken} --doc-format markdown --command overwrite`;
+    await this.executeCommand(cmd);
+  }
+
+  async deleteDocument(docToken: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +delete --file-token ${docToken} --type docx --yes`;
+    await this.executeCommand(cmd);
+  }
+
+  async fetchDocument(docToken: string): Promise<string> {
+    const cmd = `${this.config.cliPath} docs +fetch --api-version v2 --doc ${docToken} --doc-format markdown`;
+    return this.executeCommand(cmd);
   }
 }
