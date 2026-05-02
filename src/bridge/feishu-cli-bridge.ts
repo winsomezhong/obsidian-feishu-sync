@@ -166,7 +166,7 @@ export class FeishuCliBridge {
     return this.withRetry(async () => {
       const stdout = await this.executeCommand(cmd, content);
       const data = JSON.parse(stdout).data;
-      return { documentId: data.document_id, url: data.url };
+      return { documentId: data.doc_id, url: data.doc_url };
     });
   }
 

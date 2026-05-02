@@ -229,7 +229,7 @@ describe('FeishuCliBridge', () => {
   describe('createDocument', () => {
     it('returns documentId and URL', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { document_id: 'doc456', url: 'https://feishu.cn/doc/doc456' } }), '');
+        cb(null, JSON.stringify({ data: { doc_id: 'doc456', doc_url: 'https://feishu.cn/doc/doc456' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
@@ -282,7 +282,7 @@ describe('FeishuCliBridge', () => {
       let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         usedCommand = cmd;
-        cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
+        cb(null, JSON.stringify({ data: { doc_id: 'doc1', doc_url: '' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
@@ -303,7 +303,7 @@ describe('FeishuCliBridge', () => {
           const err = new Error('rate limited');
           cb(err, '', 'rate limited');
         } else {
-          cb(null, JSON.stringify({ data: { document_id: 'doc789', url: '' } }), '');
+          cb(null, JSON.stringify({ data: { doc_id: 'doc789', doc_url: '' } }), '');
         }
         return mockChild();
       });
@@ -330,7 +330,7 @@ describe('FeishuCliBridge', () => {
 
     it('succeeds on first attempt without retry', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
+        cb(null, JSON.stringify({ data: { doc_id: 'doc1', doc_url: '' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
