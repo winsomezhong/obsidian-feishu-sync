@@ -84,7 +84,15 @@ export class SyncEngine {
     if (decision === 'skip') return;
 
     if (state?.feishuFileToken) {
-      await this.bridge.deleteFile(state.feishuFileToken);
+      try {
+        await this.bridge.deleteFile(state.feishuFileToken);
+      } catch (err: any) {
+        if (err?.code === '1061007' || (err?.message && err.message.includes('delete'))) {
+          console.warn(`Feishu Sync: old file already deleted for ${file.path}, skipping delete`);
+        } else {
+          throw err;
+        }
+      }
     }
 
     const folderToken = await this.ensureFolderPath(file.path);

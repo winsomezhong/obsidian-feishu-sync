@@ -123,6 +123,27 @@ describe('SyncEngine', () => {
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok2', 2000);
     });
 
+    it('still uploads when deleteFile fails with already-deleted error', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_gone' });
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+      deps.bridge.deleteFile.mockRejectedValue({ code: '1061007', message: 'file has been delete' });
+      deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok_new', url: '' });
+
+      await engine.syncFile(mockFile);
+
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok_gone');
+      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('notes/tech.md', 'folderXYZ', 'tech.md', '/my/vault');
+      expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok_new', 2000);
+    });
+
     it('skips non-md files', async () => {
       const mockFile = { path: 'image.png', extension: 'png', stat: { mtime: 1000 } } as any;
       await engine.syncFile(mockFile);
