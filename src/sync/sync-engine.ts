@@ -59,7 +59,7 @@ export class SyncEngine {
     const content = await this.plugin.app.vault.read(file);
     const { content: processedContent } = this.preprocessor.process(content);
 
-    if (!state) {
+    if (!state || !state.feishuDocToken) {
       const title = file.name.replace(/\.md$/, '');
       const fullContent = `# ${title}\n\n${processedContent}`;
       const result = await this.bridge.createDocument(title, fullContent, this.getFolderToken());
