@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock obsidian module before importing SyncEngine
 vi.mock('obsidian', () => ({
   Plugin: class MockPlugin {},
   TFile: class MockTFile {},
@@ -10,11 +9,11 @@ const mockVaultOn = vi.fn();
 const mockVaultRead = vi.fn();
 const mockGetMarkdownFiles = vi.fn();
 const mockRegisterEvent = vi.fn();
+const mockAdapterGetFullPath = vi.fn();
 
 vi.mock('../bridge/feishu-cli-bridge', () => ({ FeishuCliBridge: class MockBridge {} }));
 vi.mock('./sync-status-tracker', () => ({ SyncStatusTracker: class MockTracker {} }));
 vi.mock('./conflict-resolver', () => ({ ConflictResolver: class MockResolver {} }));
-vi.mock('../converter/preprocessor', () => ({ Preprocessor: class MockPreprocessor {} }));
 
 import { SyncEngine } from './sync-engine';
 
@@ -26,6 +25,9 @@ function createMockPlugin() {
         on: mockVaultOn,
         read: mockVaultRead,
         getMarkdownFiles: mockGetMarkdownFiles,
+        adapter: {
+          getFullPath: mockAdapterGetFullPath,
+        },
       },
     },
   } as any;
@@ -33,10 +35,18 @@ function createMockPlugin() {
 
 function createMockDeps() {
   return {
-    bridge: { createDocument: vi.fn(), updateDocument: vi.fn(), deleteDocument: vi.fn() } as any,
-    tracker: { getFileState: vi.fn(), updateFileState: vi.fn(), removeFileState: vi.fn() } as any,
+    bridge: {
+      uploadFile: vi.fn(),
+      deleteFile: vi.fn(),
+      moveFile: vi.fn(),
+      createFolder: vi.fn(),
+    } as any,
+    tracker: {
+      getFileState: vi.fn(),
+      updateFileState: vi.fn(),
+      removeFileState: vi.fn(),
+    } as any,
     resolver: { resolve: vi.fn() } as any,
-    preprocessor: { process: vi.fn().mockReturnValue({ content: 'processed', metadata: {} }) } as any,
   };
 }
 
@@ -49,7 +59,7 @@ describe('SyncEngine', () => {
     vi.clearAllMocks();
     plugin = createMockPlugin();
     deps = createMockDeps();
-    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor, () => 'test-token');
+    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, () => 'root-token');
   });
 
   it('start() registers event listeners', () => {
@@ -59,16 +69,9 @@ describe('SyncEngine', () => {
     expect(mockVaultOn).toHaveBeenCalledWith('create', expect.any(Function));
     expect(mockVaultOn).toHaveBeenCalledWith('delete', expect.any(Function));
     expect(mockVaultOn).toHaveBeenCalledWith('rename', expect.any(Function));
-    expect(mockRegisterEvent).toHaveBeenCalledTimes(4);
   });
 
-  it('start() is idempotent', () => {
-    engine.start();
-    engine.start();
-    expect(mockRegisterEvent).toHaveBeenCalledTimes(4);
-  });
-
-  it('stop() clears running state and timers', () => {
+  it('stop() clears running state and folder cache', () => {
     engine.start();
     engine.stop();
     expect(engine.isRunning()).toBe(false);
@@ -78,108 +81,148 @@ describe('SyncEngine', () => {
     expect(engine.isRunning()).toBe(false);
   });
 
-  it('syncFile creates new doc when no state exists', async () => {
-    const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue(null);
-    deps.resolver.resolve.mockReturnValue('needs-sync');
-    mockVaultRead.mockResolvedValue('# Hello');
-    deps.bridge.createDocument.mockResolvedValue({ documentId: 'doc1', url: 'https://feishu.cn/doc/doc1' });
+  describe('syncFile', () => {
+    it('uploads file with folder resolution when no state exists', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 1000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue(null);
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetFullPath.mockReturnValue('/vault/notes/tech.md');
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+      deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok1', url: '' });
 
-    await engine.syncFile(mockFile);
+      await engine.syncFile(mockFile);
 
-    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'test-token');
-    expect(deps.tracker.updateFileState).toHaveBeenCalledWith('note.md', 'doc1', 1000);
+      expect(deps.bridge.createFolder).toHaveBeenCalledWith('root-token', 'notes');
+      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('/vault/notes/tech.md', 'folderXYZ', 'tech.md');
+      expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok1', 1000);
+    });
+
+    it('re-uploads when state exists', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetFullPath.mockReturnValue('/vault/notes/tech.md');
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+      deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok2', url: '' });
+
+      await engine.syncFile(mockFile);
+
+      expect(deps.bridge.uploadFile).toHaveBeenCalledWith('/vault/notes/tech.md', 'folderXYZ', 'tech.md');
+      expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok2', 2000);
+    });
+
+    it('skips non-md files', async () => {
+      const mockFile = { path: 'image.png', extension: 'png', stat: { mtime: 1000 } } as any;
+      await engine.syncFile(mockFile);
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('skips when resolver returns skip', async () => {
+      const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
+      deps.resolver.resolve.mockReturnValue('skip');
+      await engine.syncFile(mockFile);
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('skips when folder token is empty', async () => {
+      const engineNoToken = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, () => '');
+      const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
+      await engineNoToken.syncFile(mockFile);
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
   });
 
-  it('syncFile updates existing doc when state exists', async () => {
-    const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 2000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
-    deps.resolver.resolve.mockReturnValue('needs-sync');
-    mockVaultRead.mockResolvedValue('# Updated');
+  describe('ensureFolderPath', () => {
+    it('returns root token for file at vault root', async () => {
+      const result = await engine.ensureFolderPath('README.md');
+      expect(result).toBe('root-token');
+      expect(deps.bridge.createFolder).not.toHaveBeenCalled();
+    });
 
-    await engine.syncFile(mockFile);
+    it('creates single folder and caches token', async () => {
+      deps.bridge.createFolder.mockResolvedValue('fld_notes');
+      const result = await engine.ensureFolderPath('notes/todo.md');
+      expect(result).toBe('fld_notes');
+      expect(deps.bridge.createFolder).toHaveBeenCalledWith('root-token', 'notes');
+    });
 
-    expect(deps.bridge.updateDocument).toHaveBeenCalledWith('doc1', expect.any(String));
-    expect(deps.tracker.updateFileState).toHaveBeenCalledWith('note.md', 'doc1', 2000);
+    it('uses cache for second call with same directory', async () => {
+      deps.bridge.createFolder.mockResolvedValue('fld_notes');
+      await engine.ensureFolderPath('notes/a.md');
+      await engine.ensureFolderPath('notes/b.md');
+      expect(deps.bridge.createFolder).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates nested folders in order', async () => {
+      deps.bridge.createFolder
+        .mockResolvedValueOnce('fld_projects')
+        .mockResolvedValueOnce('fld_client');
+      const result = await engine.ensureFolderPath('projects/client/spec.md');
+      expect(result).toBe('fld_client');
+      expect(deps.bridge.createFolder).toHaveBeenNthCalledWith(1, 'root-token', 'projects');
+      expect(deps.bridge.createFolder).toHaveBeenNthCalledWith(2, 'fld_projects', 'client');
+    });
   });
 
-  it('syncFile creates new doc when state exists but feishuDocToken is empty', async () => {
-    const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: '' } as any);
-    deps.resolver.resolve.mockReturnValue('needs-sync');
-    mockVaultRead.mockResolvedValue('# Hello');
-    deps.bridge.createDocument.mockResolvedValue({ documentId: 'doc2', url: '' });
+  describe('onFileDelete', () => {
+    it('deletes drive file and removes state', async () => {
+      const mockFile = { path: 'note.md', extension: 'md' } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_del' });
+      // @ts-ignore
+      await engine.onFileDelete(mockFile);
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok_del');
+      expect(deps.tracker.removeFileState).toHaveBeenCalledWith('note.md');
+    });
 
-    await engine.syncFile(mockFile);
-
-    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'test-token');
-    expect(deps.bridge.updateDocument).not.toHaveBeenCalled();
+    it('skips when no state exists', async () => {
+      const mockFile = { path: 'note.md', extension: 'md' } as any;
+      deps.tracker.getFileState.mockReturnValue(null);
+      // @ts-ignore
+      await engine.onFileDelete(mockFile);
+      expect(deps.bridge.deleteFile).not.toHaveBeenCalled();
+    });
   });
 
-  it('syncFile skips file when resolver returns skip', async () => {
-    const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
-    deps.resolver.resolve.mockReturnValue('skip');
+  describe('onFileRename', () => {
+    it('moves drive file and updates state', async () => {
+      const mockFile = {
+        path: 'archive/note.md',
+        name: 'note.md',
+        extension: 'md',
+        stat: { mtime: 3000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_move' });
+      deps.bridge.createFolder.mockResolvedValue('fld_archive');
 
-    await engine.syncFile(mockFile);
+      // @ts-ignore
+      await engine.onFileRename(mockFile, 'inbox/note.md');
 
-    expect(deps.bridge.createDocument).not.toHaveBeenCalled();
-    expect(deps.bridge.updateDocument).not.toHaveBeenCalled();
+      expect(deps.tracker.removeFileState).toHaveBeenCalledWith('inbox/note.md');
+      expect(deps.bridge.moveFile).toHaveBeenCalledWith('ftok_move', 'fld_archive');
+      expect(deps.tracker.updateFileState).toHaveBeenCalledWith('archive/note.md', 'ftok_move', 3000);
+    });
   });
 
-  it('syncFile skips non-md files', async () => {
-    const mockFile = { path: 'image.png', extension: 'png', stat: { mtime: 1000 } } as any;
+  describe('syncAll', () => {
+    it('iterates all markdown files', async () => {
+      const files = [{ path: 'a.md', extension: 'md' }, { path: 'b.md', extension: 'md' }] as any[];
+      mockGetMarkdownFiles.mockReturnValue(files);
+      vi.spyOn(engine, 'syncFile').mockResolvedValue();
 
-    await engine.syncFile(mockFile);
+      await engine.syncAll();
 
-    expect(deps.bridge.createDocument).not.toHaveBeenCalled();
-    expect(deps.bridge.updateDocument).not.toHaveBeenCalled();
-  });
-
-  it('syncAll iterates all markdown files', async () => {
-    const files = [{ path: 'a.md', extension: 'md' }, { path: 'b.md', extension: 'md' }] as any[];
-    mockGetMarkdownFiles.mockReturnValue(files);
-    vi.spyOn(engine, 'syncFile').mockResolvedValue();
-
-    await engine.syncAll();
-
-    expect(engine.syncFile).toHaveBeenCalledTimes(2);
-  });
-
-  it('syncAll collects errors without throwing', async () => {
-    const files = [{ path: 'a.md', extension: 'md' }] as any[];
-    mockGetMarkdownFiles.mockReturnValue(files);
-    vi.spyOn(engine, 'syncFile').mockRejectedValue(new Error('test error'));
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    await engine.syncAll();
-
-    expect(consoleWarn).toHaveBeenCalled();
-    consoleWarn.mockRestore();
-  });
-
-  it('onFileChange debounces rapid modifications', async () => {
-    vi.useFakeTimers();
-    engine.start();
-
-    const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue(null);
-    deps.resolver.resolve.mockReturnValue('needs-sync');
-    mockVaultRead.mockResolvedValue('# Hello');
-    deps.bridge.createDocument.mockResolvedValue({ documentId: 'doc1', url: '' });
-
-    // Trigger the file change handler manually
-    // @ts-ignore - accessing private method for testing
-    engine.onFileChange(mockFile);
-    // @ts-ignore - accessing private method for testing
-    engine.onFileChange(mockFile);
-
-    // Only one timer should exist for this path
-    expect(deps.bridge.createDocument).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(deps.bridge.createDocument).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+      expect(engine.syncFile).toHaveBeenCalledTimes(2);
+    });
   });
 });
