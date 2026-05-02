@@ -288,7 +288,7 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await bridge.findSubfolder('parent123', 'test');
       expect(usedCommand).toContain('drive files list');
-      expect(usedCommand).toContain("'{\"folder_token\":\"parent123\"}'");
+      expect(usedCommand).toContain('--params "{\\"folder_token\\":\\"parent123\\"}"');
       expect(usedCommand).toContain('--page-all');
     });
   });

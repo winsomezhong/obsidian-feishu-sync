@@ -160,7 +160,8 @@ export class FeishuCliBridge {
 
   async findSubfolder(parentToken: string, folderName: string): Promise<string | null> {
     const params = JSON.stringify({ folder_token: parentToken });
-    const cmd = `${this.config.cliPath} drive files list --params '${params}' --page-all`;
+    const escapedParams = params.replace(/"/g, '\\"');
+    const cmd = `${this.config.cliPath} drive files list --params "${escapedParams}" --page-all`;
     return this.withRetry(async () => {
       const stdout = await this.executeCommand(cmd);
       const files = JSON.parse(stdout).data?.files;
