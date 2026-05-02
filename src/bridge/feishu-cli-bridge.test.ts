@@ -54,13 +54,15 @@ describe('FeishuCliBridge errors', () => {
 });
 
 describe('FeishuCliBridge', () => {
+  let mockExec: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExec = exec as unknown as ReturnType<typeof vi.fn>;
   });
 
   describe('executeCommand', () => {
     it('executes command and returns stdout on success', async () => {
-      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, '{"data": "ok"}', '');
       });
@@ -70,7 +72,6 @@ describe('FeishuCliBridge', () => {
     });
 
     it('throws CliNotFoundError when ENOENT', async () => {
-      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
       const err = new Error('not found');
       (err as any).code = 'ENOENT';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
@@ -81,7 +82,6 @@ describe('FeishuCliBridge', () => {
     });
 
     it('throws TimeoutError when command times out', async () => {
-      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
       const err = new Error('timed out');
       (err as any).killed = true;
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
@@ -92,13 +92,52 @@ describe('FeishuCliBridge', () => {
     });
 
     it('throws ApiError with parsed code and message from stderr JSON', async () => {
-      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
       const err = new Error('command failed');
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(err, '', JSON.stringify({ code: 999, msg: 'invalid params' }));
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
+    });
+  });
+
+  describe('preflight', () => {
+    it('returns success when CLI is installed and authenticated', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'ready' } }), ''));
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.cliVersion).toBe('1.2.3');
+        expect(result.authReady).toBe(true);
+      }
+    });
+
+    it('returns failure when CLI not installed', async () => {
+      const err = new Error('not found');
+      (err as any).code = 'ENOENT';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => cb(err, '', ''));
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('CLI_NOT_FOUND');
+        expect(result.error).toBeTruthy();
+      }
+    });
+
+    it('returns failure when auth not ready', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'expired' } }), ''));
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('AUTH_REQUIRED');
+      }
     });
   });
 });

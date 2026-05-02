@@ -55,6 +55,10 @@ const DEFAULT_CONFIG: CliBridgeConfig = {
   cliPath: 'lark-cli',
 };
 
+export type PreflightResult =
+  | { success: true; cliVersion?: string; authReady: boolean }
+  | { success: false; error: string; errorCode: string };
+
 export class FeishuCliBridge {
   constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {}
 
@@ -88,5 +92,28 @@ export class FeishuCliBridge {
         resolve(stdout);
       });
     });
+  }
+
+  async preflight(): Promise<PreflightResult> {
+    try {
+      const versionOutput = await this.executeCommand(`${this.config.cliPath} --version`);
+      const versionMatch = versionOutput.match(/[\d]+\.[\d]+\.[\d]+/);
+      const cliVersion = versionMatch ? versionMatch[0] : undefined;
+
+      const authOutput = await this.executeCommand(`${this.config.cliPath} auth status`);
+      const authData = JSON.parse(authOutput);
+      const authReady = authData?.data?.status === 'ready';
+
+      if (!authReady) {
+        return { success: false, error: 'Auth not ready', errorCode: 'AUTH_REQUIRED' };
+      }
+
+      return { success: true, cliVersion, authReady: true };
+    } catch (err) {
+      if (err instanceof CliNotFoundError) {
+        return { success: false, error: 'lark-cli not found in PATH', errorCode: 'CLI_NOT_FOUND' };
+      }
+      throw err;
+    }
   }
 }
