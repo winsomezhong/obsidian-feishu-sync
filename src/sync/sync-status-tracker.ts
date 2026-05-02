@@ -17,7 +17,7 @@ export class SyncStatusTracker {
   private dataPath: string;
 
   constructor(private dataDir: string) {
-    this.dataPath = path.join(dataDir, 'data.json');
+    this.dataPath = path.join(dataDir, 'sync-state.json');
     this.load();
   }
 

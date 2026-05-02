@@ -19,9 +19,15 @@ describe('SyncStatusTracker', () => {
   });
 
   it('loads empty state on corrupted JSON', () => {
-    fs.writeFileSync(path.join(testDir, 'data.json'), 'not json');
+    fs.writeFileSync(path.join(testDir, 'sync-state.json'), 'not json');
     tracker = new SyncStatusTracker(testDir);
     expect(tracker.getAllFiles()).toEqual([]);
+  });
+
+  it('writes to sync-state.json not data.json', () => {
+    tracker.updateFileState('note.md', 'doc123', 1000);
+    expect(fs.existsSync(path.join(testDir, 'data.json'))).toBe(false);
+    expect(fs.existsSync(path.join(testDir, 'sync-state.json'))).toBe(true);
   });
 
   it('persists and retrieves file state', () => {
