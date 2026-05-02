@@ -145,11 +145,11 @@ export class SyncEngine {
     if (file.extension !== 'md') return;
     const state = this.tracker.getFileState(oldPath);
     if (state) {
-      this.tracker.removeFileState(oldPath);
-      this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
       try {
         const targetFolder = await this.ensureFolderPath(file.path);
         await this.bridge.moveFile(state.feishuFileToken, targetFolder);
+        this.tracker.removeFileState(oldPath);
+        this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
       } catch (err) {
         console.error(`Failed to move drive file for ${file.path}:`, err);
       }
