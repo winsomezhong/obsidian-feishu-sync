@@ -59,11 +59,11 @@ const DEFAULT_CONFIG: CliBridgeConfig = {
 export class FeishuCliBridge {
   constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {}
 
-  executeCommand(command: string): Promise<string> {
+  executeCommand(command: string, input?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const fullCmd = command;
 
-      exec(fullCmd, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
+      const child = exec(fullCmd, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
         if (err) {
           const nodeErr = err as NodeJS.ErrnoException;
           if (nodeErr.code === 'ENOENT' || (err.message && err.message.includes('not found'))) {
@@ -88,56 +88,82 @@ export class FeishuCliBridge {
         }
         resolve(stdout);
       });
+      if (input !== undefined) {
+        child.stdin?.write(input);
+        child.stdin?.end();
+      }
     });
   }
 
-  async preflight(): Promise<PreflightResult> {
-    try {
-      const versionOutput = await this.executeCommand(`${this.config.cliPath} --version`);
-      const versionMatch = versionOutput.match(/[\d]+\.[\d]+\.[\d]+/);
-      const cliVersion = versionMatch ? versionMatch[0] : undefined;
+  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const delays = [3000, 10000, 30000];
+    let lastError: Error = new Error('unknown');
 
-      const authOutput = await this.executeCommand(`${this.config.cliPath} auth status`);
-      let authData: any;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
       try {
-        authData = JSON.parse(authOutput);
-      } catch {
-        return { success: false, error: 'Failed to parse auth status', errorCode: 'AUTH_CHECK_FAILED' };
+        return await fn();
+      } catch (err) {
+        lastError = err as Error;
+        if (err instanceof CliNotFoundError || err instanceof AuthRequiredError) throw err;
+        if (attempt < delays.length) {
+          await new Promise(r => setTimeout(r, delays[attempt]));
+        }
       }
-      const authReady = authData?.data?.status === 'ready';
-
-      if (!authReady) {
-        return { success: false, error: 'Auth not ready', errorCode: 'AUTH_REQUIRED' };
-      }
-
-      return { success: true, cliVersion, authReady: true };
-    } catch (err) {
-      if (err instanceof CliNotFoundError) {
-        return { success: false, error: 'lark-cli not found in PATH', errorCode: 'CLI_NOT_FOUND' };
-      }
-      throw err;
     }
+    throw lastError;
+  }
+
+  async preflight(): Promise<PreflightResult> {
+    return this.withRetry(async () => {
+      try {
+        const versionOutput = await this.executeCommand(`${this.config.cliPath} --version`);
+        const versionMatch = versionOutput.match(/[\d]+\.[\d]+\.[\d]+/);
+        const cliVersion = versionMatch ? versionMatch[0] : undefined;
+
+        const authOutput = await this.executeCommand(`${this.config.cliPath} auth status`);
+        let authData: any;
+        try {
+          authData = JSON.parse(authOutput);
+        } catch {
+          return { success: false, error: 'Failed to parse auth status', errorCode: 'AUTH_CHECK_FAILED' };
+        }
+        const authReady = authData?.data?.status === 'ready';
+
+        if (!authReady) {
+          return { success: false, error: 'Auth not ready', errorCode: 'AUTH_REQUIRED' };
+        }
+
+        return { success: true, cliVersion, authReady: true };
+      } catch (err) {
+        if (err instanceof CliNotFoundError) {
+          return { success: false, error: 'lark-cli not found in PATH', errorCode: 'CLI_NOT_FOUND' };
+        }
+        throw err;
+      }
+    });
   }
 
   async createDocument(title: string, content: string, folderToken: string): Promise<DocumentResult> {
     const cmd = `${this.config.cliPath} docs +create --api-version v2 --doc-format markdown --parent-token ${folderToken}`;
-    const stdout = await this.executeCommand(cmd);
-    const data = JSON.parse(stdout).data;
-    return { documentId: data.document_id, url: data.url };
+    return this.withRetry(async () => {
+      const stdout = await this.executeCommand(cmd, content);
+      const data = JSON.parse(stdout).data;
+      return { documentId: data.document_id, url: data.url };
+    });
   }
 
   async updateDocument(docToken: string, content: string): Promise<void> {
     const cmd = `${this.config.cliPath} docs +update --api-version v2 --doc ${docToken} --doc-format markdown --command overwrite`;
-    await this.executeCommand(cmd);
+    await this.withRetry(() => this.executeCommand(cmd, content));
   }
 
   async deleteDocument(docToken: string): Promise<void> {
     const cmd = `${this.config.cliPath} drive +delete --file-token ${docToken} --type docx --yes`;
-    await this.executeCommand(cmd);
+    await this.withRetry(() => this.executeCommand(cmd));
   }
 
   async fetchDocument(docToken: string): Promise<string> {
     const cmd = `${this.config.cliPath} docs +fetch --api-version v2 --doc ${docToken} --doc-format markdown`;
-    return this.executeCommand(cmd);
+    return this.withRetry(() => this.executeCommand(cmd));
   }
 }

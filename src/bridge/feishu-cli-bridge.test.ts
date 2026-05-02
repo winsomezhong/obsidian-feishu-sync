@@ -13,6 +13,10 @@ vi.mock('child_process', () => ({
   exec: vi.fn(),
 }));
 
+function mockChild() {
+  return { stdin: { write: vi.fn(), end: vi.fn() } };
+}
+
 describe('FeishuCliBridge errors', () => {
   it('CliNotFoundError has correct name and message', () => {
     const err = new CliNotFoundError('lark-cli not found');
@@ -65,6 +69,7 @@ describe('FeishuCliBridge', () => {
     it('executes command and returns stdout on success', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, '{"data": "ok"}', '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       const result = await bridge.executeCommand('some-cmd');
@@ -76,6 +81,7 @@ describe('FeishuCliBridge', () => {
       (err as any).code = 'ENOENT';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(err, '', '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.executeCommand('bad-cmd')).rejects.toThrow(CliNotFoundError);
@@ -86,6 +92,7 @@ describe('FeishuCliBridge', () => {
       (err as any).killed = true;
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(err, '', '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge({ timeoutMs: 1 });
       await expect(bridge.executeCommand('sleep-cmd')).rejects.toThrow(TimeoutError);
@@ -95,17 +102,51 @@ describe('FeishuCliBridge', () => {
       const err = new Error('command failed');
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(err, '', JSON.stringify({ code: 999, msg: 'invalid params' }));
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
+    });
+
+    it('writes content to stdin when input is provided', async () => {
+      let writtenContent = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        return {
+          stdin: {
+            write: (data: string) => { writtenContent = data; },
+            end: () => { cb(null, 'done', ''); },
+          },
+        };
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.executeCommand('some-cmd', 'hello stdin');
+      expect(writtenContent).toBe('hello stdin');
+      expect(result).toBe('done');
+    });
+
+    it('does not write to stdin when input is undefined', async () => {
+      const write = vi.fn();
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, 'output', '');
+        return { stdin: { write, end: vi.fn() } };
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.executeCommand('some-cmd');
+      expect(write).not.toHaveBeenCalled();
     });
   });
 
   describe('preflight', () => {
     it('returns success when CLI is installed and authenticated', async () => {
       mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'ready' } }), ''));
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ data: { status: 'ready' } }), '');
+          return mockChild();
+        });
       const bridge = new FeishuCliBridge();
       const result = await bridge.preflight();
       expect(result.success).toBe(true);
@@ -118,7 +159,10 @@ describe('FeishuCliBridge', () => {
     it('returns failure when CLI not installed', async () => {
       const err = new Error('not found');
       (err as any).code = 'ENOENT';
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => cb(err, '', ''));
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', '');
+        return mockChild();
+      });
       const bridge = new FeishuCliBridge();
       const result = await bridge.preflight();
       expect(result.success).toBe(false);
@@ -130,8 +174,14 @@ describe('FeishuCliBridge', () => {
 
     it('returns failure when auth not ready', async () => {
       mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'expired' } }), ''));
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ data: { status: 'expired' } }), '');
+          return mockChild();
+        });
       const bridge = new FeishuCliBridge();
       const result = await bridge.preflight();
       expect(result.success).toBe(false);
@@ -142,8 +192,14 @@ describe('FeishuCliBridge', () => {
 
     it('handles version output without semver string', async () => {
       mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli (unknown version)\n', ''))
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, JSON.stringify({ data: { status: 'ready' } }), ''));
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli (unknown version)\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ data: { status: 'ready' } }), '');
+          return mockChild();
+        });
       const bridge = new FeishuCliBridge();
       const result = await bridge.preflight();
       expect(result.success).toBe(true);
@@ -154,8 +210,14 @@ describe('FeishuCliBridge', () => {
 
     it('handles malformed auth status JSON', async () => {
       mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'lark-cli/1.2.3\n', ''))
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => cb(null, 'not json\n', ''));
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'not json\n', '');
+          return mockChild();
+        });
       const bridge = new FeishuCliBridge();
       const result = await bridge.preflight();
       expect(result.success).toBe(false);
@@ -169,6 +231,7 @@ describe('FeishuCliBridge', () => {
     it('returns documentId and URL', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, JSON.stringify({ data: { document_id: 'doc456', url: 'https://feishu.cn/doc/doc456' } }), '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       const result = await bridge.createDocument('My Title', '# Content', 'folder123');
@@ -181,6 +244,7 @@ describe('FeishuCliBridge', () => {
     it('succeeds', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.updateDocument('doc456', '# Updated')).resolves.not.toThrow();
@@ -191,6 +255,7 @@ describe('FeishuCliBridge', () => {
     it('succeeds', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.deleteDocument('doc456')).resolves.not.toThrow();
@@ -201,10 +266,76 @@ describe('FeishuCliBridge', () => {
     it('returns markdown content', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, '# Hello from Feishu\n\nContent', '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       const content = await bridge.fetchDocument('doc456');
       expect(content).toContain('# Hello from Feishu');
+    });
+  });
+
+  describe('stdin piping', () => {
+    it('writes content to stdin for createDocument', async () => {
+      let writtenContent = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        return {
+          stdin: {
+            write: (data: string) => { writtenContent = data; },
+            end: () => {
+              cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
+            },
+          },
+        };
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.createDocument('Title', '# Hello', 'folder');
+      expect(writtenContent).toBe('# Hello');
+    });
+  });
+
+  describe('retry logic', () => {
+    it('retries on error up to max attempts', async () => {
+      vi.useFakeTimers();
+      let attempts = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        attempts++;
+        if (attempts < 3) {
+          const err = new Error('rate limited');
+          cb(err, '', 'rate limited');
+        } else {
+          cb(null, JSON.stringify({ data: { document_id: 'doc789', url: '' } }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const resultPromise = bridge.createDocument('T', 'C', 'folder');
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(10000);
+      const result = await resultPromise;
+      expect(result.documentId).toBe('doc789');
+      expect(attempts).toBe(3);
+      vi.useRealTimers();
+    });
+
+    it('throws immediately on CliNotFoundError (no retry)', async () => {
+      const err = new Error('not found');
+      (err as any).code = 'ENOENT';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.createDocument('T', 'C', 'folder')).rejects.toThrow(CliNotFoundError);
+    });
+
+    it('succeeds on first attempt without retry', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.createDocument('T', 'C', 'folder');
+      expect(result.documentId).toBe('doc1');
     });
   });
 });
