@@ -31,7 +31,7 @@ export default class FeishuSyncPlugin extends Plugin {
     const resolver = new ConflictResolver();
     const preprocessor = new Preprocessor(this.settings.processorConfig);
 
-    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, preprocessor);
+    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, preprocessor, () => this.settings.folderToken);
 
     // Preflight
     const preflightResult = await this.bridge.preflight();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import {
   CliNotFoundError,
   AuthRequiredError,
@@ -11,6 +11,7 @@ import {
 
 vi.mock('child_process', () => ({
   exec: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 function mockChild() {
@@ -108,31 +109,29 @@ describe('FeishuCliBridge', () => {
       await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
     });
 
-    it('writes content to stdin when input is provided', async () => {
-      let writtenContent = '';
+    it('writes content to CWD temp file and uses relative path in command', async () => {
+      let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        return {
-          stdin: {
-            write: (data: string) => { writtenContent = data; },
-            end: () => { cb(null, 'done', ''); },
-          },
-        };
+        usedCommand = cmd;
+        cb(null, 'done', '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      const result = await bridge.executeCommand('some-cmd', 'hello stdin');
-      expect(writtenContent).toBe('hello stdin');
+      const result = await bridge.executeCommand('cmd --content @-', 'hello');
+      expect(usedCommand).toMatch(/cmd --content @lark-content-\d+-[a-z0-9]+\.md$/);
+      expect(usedCommand).not.toContain('\\');
+      expect(usedCommand).not.toContain('/');
       expect(result).toBe('done');
     });
 
-    it('does not write to stdin when input is undefined', async () => {
-      const write = vi.fn();
+    it('does not create temp file when input is undefined', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, 'output', '');
-        return { stdin: { write, end: vi.fn() } };
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await bridge.executeCommand('some-cmd');
-      expect(write).not.toHaveBeenCalled();
+      const result = await bridge.executeCommand('cmd --content @-');
+      expect(result).toBe('output');
     });
   });
 
@@ -144,7 +143,7 @@ describe('FeishuCliBridge', () => {
           return mockChild();
         })
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, JSON.stringify({ data: { status: 'ready' } }), '');
+          cb(null, JSON.stringify({ tokenStatus: 'valid' }), '');
           return mockChild();
         });
       const bridge = new FeishuCliBridge();
@@ -179,7 +178,7 @@ describe('FeishuCliBridge', () => {
           return mockChild();
         })
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, JSON.stringify({ data: { status: 'expired' } }), '');
+          cb(null, JSON.stringify({ tokenStatus: 'expired' }), '');
           return mockChild();
         });
       const bridge = new FeishuCliBridge();
@@ -197,7 +196,7 @@ describe('FeishuCliBridge', () => {
           return mockChild();
         })
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, JSON.stringify({ data: { status: 'ready' } }), '');
+          cb(null, JSON.stringify({ tokenStatus: 'valid' }), '');
           return mockChild();
         });
       const bridge = new FeishuCliBridge();
@@ -241,13 +240,17 @@ describe('FeishuCliBridge', () => {
   });
 
   describe('updateDocument', () => {
-    it('succeeds', async () => {
+    it('succeeds with correct command format', async () => {
+      let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+        usedCommand = cmd;
+        cb(null, '{}', '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.updateDocument('doc456', '# Updated')).resolves.not.toThrow();
+      expect(usedCommand).toMatch(/lark-cli docs \+update --doc doc456 --mode overwrite --markdown @lark-content-\d+-[a-z0-9]+\.md/);
+      expect(usedCommand).toContain('--doc doc456');
     });
   });
 
@@ -274,22 +277,19 @@ describe('FeishuCliBridge', () => {
     });
   });
 
-  describe('stdin piping', () => {
-    it('writes content to stdin for createDocument', async () => {
-      let writtenContent = '';
+  describe('temp file content passing', () => {
+    it('replaces @- with temp file path for createDocument', async () => {
+      let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        return {
-          stdin: {
-            write: (data: string) => { writtenContent = data; },
-            end: () => {
-              cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
-            },
-          },
-        };
+        usedCommand = cmd;
+        cb(null, JSON.stringify({ data: { document_id: 'doc1', url: '' } }), '');
+        return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await bridge.createDocument('Title', '# Hello', 'folder');
-      expect(writtenContent).toBe('# Hello');
+      expect(usedCommand).toMatch(/lark-cli docs \+create.*--markdown @lark-content-\d+-[a-z0-9]+\.md/);
+      expect(usedCommand).toContain('--folder-token folder');
+      expect(usedCommand).not.toContain('--title');
     });
   });
 

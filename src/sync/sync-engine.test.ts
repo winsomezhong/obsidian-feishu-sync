@@ -49,7 +49,7 @@ describe('SyncEngine', () => {
     vi.clearAllMocks();
     plugin = createMockPlugin();
     deps = createMockDeps();
-    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor);
+    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor, () => 'test-token');
   });
 
   it('start() registers event listeners', () => {
@@ -87,7 +87,7 @@ describe('SyncEngine', () => {
 
     await engine.syncFile(mockFile);
 
-    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', '');
+    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'test-token');
     expect(deps.tracker.updateFileState).toHaveBeenCalledWith('note.md', 'doc1', 1000);
   });
 

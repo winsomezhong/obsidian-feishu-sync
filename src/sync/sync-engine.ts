@@ -14,6 +14,7 @@ export class SyncEngine {
     private tracker: SyncStatusTracker,
     private resolver: ConflictResolver,
     private preprocessor: Preprocessor,
+    private getFolderToken: () => string,
   ) {}
 
   start(): void {
@@ -46,6 +47,10 @@ export class SyncEngine {
 
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
+    if (!this.getFolderToken()) {
+      console.warn('Feishu Sync: folder token not set, skipping', file.path);
+      return;
+    }
 
     const state = this.tracker.getFileState(file.path);
     const decision = this.resolver.resolve(file.stat.mtime, state);
@@ -57,7 +62,7 @@ export class SyncEngine {
     if (!state) {
       const title = file.name.replace(/\.md$/, '');
       const fullContent = `# ${title}\n\n${processedContent}`;
-      const result = await this.bridge.createDocument(title, fullContent, '');
+      const result = await this.bridge.createDocument(title, fullContent, this.getFolderToken());
       this.tracker.updateFileState(file.path, result.documentId, file.stat.mtime);
     } else {
       const fullContent = `# ${file.name.replace(/\.md$/, '')}\n\n${processedContent}`;

@@ -23,6 +23,7 @@ export class SyncStatusBar {
   }
 
   onClick(callback: () => void): void {
-    this.statusBarItem.onClick(callback);
+    const el = (this.statusBarItem as any).containerEl ?? this.statusBarItem;
+    el.addEventListener?.('click', callback);
   }
 }

@@ -1,4 +1,6 @@
 import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import type { DocumentResult, PreflightResult } from '../types';
 
 export class CliNotFoundError extends Error {
@@ -62,10 +64,28 @@ export class FeishuCliBridge {
   }
 
   executeCommand(command: string, input?: string): Promise<string> {
+    let absoluteTempPath: string | undefined;
+    let tempFileName: string | undefined;
+    if (input !== undefined && command.includes('@-')) {
+      tempFileName = `lark-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
+      absoluteTempPath = path.join(process.cwd(), tempFileName);
+      try {
+        fs.writeFileSync(absoluteTempPath, input, 'utf-8');
+      } catch (e) {
+        throw new Error(`Failed to write temp file at ${absoluteTempPath}: ${(e as Error).message}`);
+      }
+      command = command.replace('@-', '@' + tempFileName);
+    }
+
     return new Promise((resolve, reject) => {
       const fullCmd = command;
 
       const child = exec(fullCmd, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
+        if (absoluteTempPath) {
+          try { fs.unlinkSync(absoluteTempPath); } catch (e) {
+            console.warn('Feishu Sync: failed to clean up temp file', absoluteTempPath, (e as Error).message);
+          }
+        }
         if (err) {
           const nodeErr = err as NodeJS.ErrnoException;
           if (nodeErr.code === 'ENOENT' || (err.message && err.message.includes('not found'))) {
@@ -90,10 +110,6 @@ export class FeishuCliBridge {
         }
         resolve(stdout);
       });
-      if (input !== undefined) {
-        child.stdin?.write(input);
-        child.stdin?.end();
-      }
     });
   }
 
@@ -129,7 +145,7 @@ export class FeishuCliBridge {
         } catch {
           return { success: false, error: 'Failed to parse auth status', errorCode: 'AUTH_CHECK_FAILED' };
         }
-        const authReady = authData?.data?.status === 'ready';
+        const authReady = authData?.tokenStatus === 'valid';
 
         if (!authReady) {
           return { success: false, error: 'Auth not ready', errorCode: 'AUTH_REQUIRED' };
@@ -146,7 +162,7 @@ export class FeishuCliBridge {
   }
 
   async createDocument(title: string, content: string, folderToken: string): Promise<DocumentResult> {
-    const cmd = `${this.config.cliPath} docs +create --api-version v2 --doc-format markdown --parent-token ${folderToken}`;
+    const cmd = `${this.config.cliPath} docs +create --folder-token ${folderToken} --markdown @-`;
     return this.withRetry(async () => {
       const stdout = await this.executeCommand(cmd, content);
       const data = JSON.parse(stdout).data;
@@ -155,7 +171,7 @@ export class FeishuCliBridge {
   }
 
   async updateDocument(docToken: string, content: string): Promise<void> {
-    const cmd = `${this.config.cliPath} docs +update --api-version v2 --doc ${docToken} --doc-format markdown --command overwrite`;
+    const cmd = `${this.config.cliPath} docs +update --doc ${docToken} --mode overwrite --markdown @-`;
     await this.withRetry(() => this.executeCommand(cmd, content));
   }
 
