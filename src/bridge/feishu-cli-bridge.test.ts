@@ -185,9 +185,9 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await bridge.uploadFile('/vault/notes/hello.md', 'parentToken', 'hello.md');
       expect(usedCommand).toContain('drive +upload');
-      expect(usedCommand).toContain('--file /vault/notes/hello.md');
-      expect(usedCommand).toContain('--folder-token parentToken');
-      expect(usedCommand).toContain('--name hello.md');
+      expect(usedCommand).toContain('--file "/vault/notes/hello.md"');
+      expect(usedCommand).toContain('--folder-token "parentToken"');
+      expect(usedCommand).toContain('--name "hello.md"');
     });
   });
 
@@ -212,8 +212,8 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await bridge.createFolder('rootToken', 'subdir');
       expect(usedCommand).toContain('drive +create-folder');
-      expect(usedCommand).toContain('--folder-token rootToken');
-      expect(usedCommand).toContain('--name subdir');
+      expect(usedCommand).toContain('--folder-token "rootToken"');
+      expect(usedCommand).toContain('--name "subdir"');
     });
   });
 
@@ -237,7 +237,7 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await bridge.deleteFile('ftok789');
       expect(usedCommand).toContain('drive +delete');
-      expect(usedCommand).toContain('--file-token ftok789');
+      expect(usedCommand).toContain('--file-token "ftok789"');
       expect(usedCommand).toContain('--type file');
       expect(usedCommand).toContain('--yes');
     });
@@ -263,8 +263,8 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await bridge.moveFile('ftok123', 'newFolder456');
       expect(usedCommand).toContain('drive +move');
-      expect(usedCommand).toContain('--file-token ftok123');
-      expect(usedCommand).toContain('--folder-token newFolder456');
+      expect(usedCommand).toContain('--file-token "ftok123"');
+      expect(usedCommand).toContain('--folder-token "newFolder456"');
       expect(usedCommand).toContain('--type file');
     });
   });

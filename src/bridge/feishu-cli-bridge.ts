@@ -140,7 +140,7 @@ export class FeishuCliBridge {
   }
 
   async uploadFile(localPath: string, folderToken: string, fileName: string): Promise<UploadResult> {
-    const cmd = `${this.config.cliPath} drive +upload --file ${localPath} --folder-token ${folderToken} --name ${fileName}`;
+    const cmd = `${this.config.cliPath} drive +upload --file "${localPath}" --folder-token "${folderToken}" --name "${fileName}"`;
     return this.withRetry(async () => {
       const stdout = await this.executeCommand(cmd);
       const data = JSON.parse(stdout).data;
@@ -149,7 +149,7 @@ export class FeishuCliBridge {
   }
 
   async createFolder(parentToken: string, folderName: string): Promise<string> {
-    const cmd = `${this.config.cliPath} drive +create-folder --folder-token ${parentToken} --name ${folderName}`;
+    const cmd = `${this.config.cliPath} drive +create-folder --folder-token "${parentToken}" --name "${folderName}"`;
     return this.withRetry(async () => {
       const stdout = await this.executeCommand(cmd);
       return JSON.parse(stdout).data.folder_token;
@@ -157,12 +157,12 @@ export class FeishuCliBridge {
   }
 
   async deleteFile(fileToken: string): Promise<void> {
-    const cmd = `${this.config.cliPath} drive +delete --file-token ${fileToken} --type file --yes`;
+    const cmd = `${this.config.cliPath} drive +delete --file-token "${fileToken}" --type file --yes`;
     await this.withRetry(() => this.executeCommand(cmd));
   }
 
   async moveFile(fileToken: string, targetFolderToken: string): Promise<void> {
-    const cmd = `${this.config.cliPath} drive +move --file-token ${fileToken} --folder-token ${targetFolderToken} --type file`;
+    const cmd = `${this.config.cliPath} drive +move --file-token "${fileToken}" --folder-token "${targetFolderToken}" --type file`;
     await this.withRetry(() => this.executeCommand(cmd));
   }
 }
