@@ -1,0 +1,9 @@
+/.claude
+/.opencode
+/.trae
+
+node_modules/
+main.js
+*.d.ts
+*.d.ts.map
+/.worktrees
