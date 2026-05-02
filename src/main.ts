@@ -3,7 +3,7 @@ import { FeishuCliBridge } from './bridge/feishu-cli-bridge';
 import { SyncStatusTracker } from './sync/sync-status-tracker';
 import { ConflictResolver } from './sync/conflict-resolver';
 import { SyncEngine } from './sync/sync-engine';
-import { Preprocessor } from './converter/preprocessor';
+
 import { SyncLog } from './sync/sync-log';
 import { SyncSettingsTab, DEFAULT_SETTINGS } from './ui/settings-tab';
 import { SyncStatusBar } from './ui/status-bar';
@@ -29,9 +29,8 @@ export default class FeishuSyncPlugin extends Plugin {
     this.bridge = new FeishuCliBridge();
     this.tracker = new SyncStatusTracker(dataDir);
     const resolver = new ConflictResolver();
-    const preprocessor = new Preprocessor(this.settings.processorConfig);
 
-    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, preprocessor, () => this.settings.folderToken);
+    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, () => this.settings.folderToken);
 
     // Preflight
     const preflightResult = await this.bridge.preflight();

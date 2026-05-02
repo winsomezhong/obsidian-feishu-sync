@@ -1,24 +1,12 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import type { ProcessorConfig } from '../converter/preprocessor';
 
 export interface SyncPluginSettings {
   folderToken: string;
-  processorConfig: ProcessorConfig;
   syncOnSave: boolean;
 }
 
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
   folderToken: '',
-  processorConfig: {
-    frontmatter: 'strip',
-    wikilink: 'keep-text',
-    tag: 'keep-inline',
-    dataview: 'comment-out',
-    image: 'strip',
-    tableMaxRows: 9,
-    callout: 'strip-type',
-    math: 'keep',
-  },
   syncOnSave: true,
 };
 
@@ -38,8 +26,8 @@ export class SyncSettingsTab extends PluginSettingTab {
     containerEl.createEl('h2', { text: 'Feishu Sync Settings' });
 
     new Setting(containerEl)
-      .setName('Folder token')
-      .setDesc('Feishu Drive folder token for document sync')
+      .setName('Sync root folder token')
+      .setDesc('Feishu Drive folder token for file sync (files are uploaded preserving vault directory structure under this folder)')
       .addText(text => text
         .setPlaceholder('Enter folder token')
         .setValue((this.plugin.settings?.folderToken || ''))
@@ -58,86 +46,6 @@ export class SyncSettingsTab extends PluginSettingTab {
           this.plugin.settings.syncOnSave = value;
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Frontmatter strategy')
-      .setDesc('How to handle YAML frontmatter')
-      .addDropdown(dropdown => dropdown
-        .addOption('strip', 'Strip')
-        .addOption('keep-as-text', 'Keep as text')
-        .setValue(this.plugin.settings?.processorConfig?.frontmatter || 'strip')
-        .onChange(async value => {
-          this.plugin.settings.processorConfig.frontmatter = value as any;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Wikilink strategy')
-      .setDesc('How to handle [[wikilink]] syntax')
-      .addDropdown(dropdown => dropdown
-        .addOption('keep-text', 'Keep text')
-        .addOption('strip', 'Strip')
-        .setValue(this.plugin.settings?.processorConfig?.wikilink || 'keep-text')
-        .onChange(async value => {
-          this.plugin.settings.processorConfig.wikilink = value as any;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Tag strategy')
-      .setDesc('How to handle #tags')
-      .addDropdown(dropdown => dropdown
-        .addOption('keep-inline', 'Keep inline')
-        .addOption('strip', 'Strip')
-        .setValue(this.plugin.settings?.processorConfig?.tag || 'keep-inline')
-        .onChange(async value => {
-          this.plugin.settings.processorConfig.tag = value as any;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Dataview strategy')
-      .setDesc('How to handle ```dataview blocks')
-      .addDropdown(dropdown => dropdown
-        .addOption('comment-out', 'Comment out')
-        .addOption('strip', 'Strip')
-        .setValue(this.plugin.settings?.processorConfig?.dataview || 'comment-out')
-        .onChange(async value => {
-          this.plugin.settings.processorConfig.dataview = value as any;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Image strategy')
-      .setDesc('How to handle ![[image]] references')
-      .addDropdown(dropdown => dropdown
-        .addOption('upload', 'Upload placeholder')
-        .addOption('strip', 'Strip')
-        .setValue(this.plugin.settings?.processorConfig?.image || 'strip')
-        .onChange(async value => {
-          this.plugin.settings.processorConfig.image = value as any;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName('Table max rows')
-      .setDesc('Maximum rows per table before splitting (default: 9)')
-      .addText(text => text
-        .setPlaceholder('9')
-        .setValue(String(this.plugin.settings?.processorConfig?.tableMaxRows ?? 9))
-        .onChange(async value => {
-          const num = parseInt(value, 10);
-          if (!isNaN(num) && num > 0) {
-            this.plugin.settings.processorConfig.tableMaxRows = num;
-            await this.plugin.saveData(this.plugin.settings);
-            this.onSettingsChange(this.plugin.settings);
-          }
         }));
   }
 }
