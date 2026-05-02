@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { exec } from 'child_process';
 import {
   CliNotFoundError,
@@ -8,6 +8,10 @@ import {
   RateLimitError,
   FeishuCliBridge,
 } from './feishu-cli-bridge';
+
+vi.mock('child_process', () => ({
+  exec: vi.fn(),
+}));
 
 describe('FeishuCliBridge errors', () => {
   it('CliNotFoundError has correct name and message', () => {
@@ -50,16 +54,51 @@ describe('FeishuCliBridge errors', () => {
 });
 
 describe('FeishuCliBridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe('executeCommand', () => {
     it('executes command and returns stdout on success', async () => {
+      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '{"data": "ok"}', '');
+      });
       const bridge = new FeishuCliBridge();
-      const result = await bridge.executeCommand('echo hello');
-      expect(result.trim()).toBe('hello');
+      const result = await bridge.executeCommand('some-cmd');
+      expect(result).toBe('{"data": "ok"}');
     });
 
-    it('throws CliNotFoundError when command does not exist', async () => {
-      const bridge = new FeishuCliBridge({ timeoutMs: 5000, cliPath: 'nonexistent-cli-binary' });
-      await expect(bridge.executeCommand('nonexistent-command-xyz')).rejects.toThrow(CliNotFoundError);
+    it('throws CliNotFoundError when ENOENT', async () => {
+      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
+      const err = new Error('not found');
+      (err as any).code = 'ENOENT';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', '');
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.executeCommand('bad-cmd')).rejects.toThrow(CliNotFoundError);
+    });
+
+    it('throws TimeoutError when command times out', async () => {
+      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
+      const err = new Error('timed out');
+      (err as any).killed = true;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', '');
+      });
+      const bridge = new FeishuCliBridge({ timeoutMs: 1 });
+      await expect(bridge.executeCommand('sleep-cmd')).rejects.toThrow(TimeoutError);
+    });
+
+    it('throws ApiError with parsed code and message from stderr JSON', async () => {
+      const mockExec = exec as unknown as ReturnType<typeof vi.fn>;
+      const err = new Error('command failed');
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', JSON.stringify({ code: 999, msg: 'invalid params' }));
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
     });
   });
 });

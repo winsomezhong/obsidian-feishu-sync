@@ -60,18 +60,13 @@ export class FeishuCliBridge {
 
   executeCommand(command: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const fullCmd = command.startsWith(this.config.cliPath) || command === 'echo hello'
-        ? command
-        : `${this.config.cliPath} ${command}`;
+      const fullCmd = command;
 
       exec(fullCmd, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
         if (err) {
           const nodeErr = err as NodeJS.ErrnoException;
-          const firstToken = fullCmd.split(' ')[0];
-          if (nodeErr.code === 'ENOENT' ||
-              (err.message && err.message.includes('not found')) ||
-              (nodeErr.code === 1 && err.killed === false && stderr && stderr.includes(`'${firstToken}'`))) {
-            reject(new CliNotFoundError(`Command not found: ${firstToken}`));
+          if (nodeErr.code === 'ENOENT' || (err.message && err.message.includes('not found'))) {
+            reject(new CliNotFoundError(`Command not found: ${command.split(' ')[0]}`));
             return;
           }
           if (nodeErr.killed || (err.message && err.message.includes('timeout'))) {
@@ -81,7 +76,7 @@ export class FeishuCliBridge {
           if (stderr) {
             try {
               const parsed = JSON.parse(stderr);
-              reject(new ApiError(parsed.code || 1, parsed.msg || stderr, parsed.code || 'UNKNOWN'));
+              reject(new ApiError(parsed.code ?? 1, parsed.msg ?? stderr, parsed.code?.toString() ?? 'UNKNOWN'));
             } catch {
               reject(new ApiError(1, stderr || err.message, 'UNKNOWN'));
             }
