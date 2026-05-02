@@ -1,4 +1,5 @@
 import { exec } from 'child_process';
+import type { PreflightResult } from '../types';
 
 export class CliNotFoundError extends Error {
   name = 'CliNotFoundError';
@@ -54,10 +55,6 @@ const DEFAULT_CONFIG: CliBridgeConfig = {
   timeoutMs: 30_000,
   cliPath: 'lark-cli',
 };
-
-export type PreflightResult =
-  | { success: true; cliVersion?: string; authReady: boolean }
-  | { success: false; error: string; errorCode: string };
 
 export class FeishuCliBridge {
   constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {}
