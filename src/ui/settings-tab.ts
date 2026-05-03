@@ -207,7 +207,7 @@ export class SyncSettingsTab extends PluginSettingTab {
     (this.cliStatusEl as any).style.color = display.color;
 
     // Add install guide link when CLI is not found
-    const existingLink = this.cliStatusDescEl?.querySelector('.feishu-sync-install-link');
+    const existingLink = (this.cliStatusDescEl as any)?.querySelector('.feishu-sync-install-link');
     if (existingLink) {
       existingLink.remove();
     }
