@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { exec } from 'child_process';
 import type { PreflightStatus } from '../types';
 import { t } from '../i18n';
 import type { Locale } from '../i18n';
@@ -79,6 +80,25 @@ export function getAuthGuidanceText(settings: SyncPluginSettings): string {
     default:
       return settings.folderResolutionError || 'Preflight check failed. See console for details.';
   }
+}
+
+export function launchAuthLogin(): void {
+  const cmd = 'lark-cli auth login';
+  let terminalCmd: string;
+  if (process.platform === 'win32') {
+    terminalCmd = `start cmd /c "${cmd} & pause"`;
+  } else if (process.platform === 'darwin') {
+    terminalCmd = `osascript -e 'tell app "Terminal" to do script "${cmd}"'`;
+  } else {
+    terminalCmd = `x-terminal-emulator -e "bash -c '${cmd}; exec bash'"`;
+  }
+  exec(terminalCmd, (err) => {
+    if (err) {
+      new Notice(`Failed to launch terminal. Please run manually: ${cmd}`);
+    } else {
+      new Notice('Authorization command launched. Follow the instructions in the terminal window.');
+    }
+  });
 }
 
 export class SyncSettingsTab extends PluginSettingTab {

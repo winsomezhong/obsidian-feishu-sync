@@ -1,7 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText } from './settings-tab';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText, launchAuthLogin } from './settings-tab';
 import type { SyncPluginSettings } from './settings-tab';
 import { TRANSLATIONS } from '../i18n';
+import { Notice } from 'obsidian';
+
+// Mock child_process
+vi.mock('child_process', () => ({
+  exec: vi.fn(),
+}));
+
+import { exec } from 'child_process';
 
 describe('DEFAULT_SETTINGS', () => {
   it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, and language', () => {
@@ -200,5 +208,61 @@ describe('i18n integration', () => {
     const zhSettings: SyncPluginSettings = { ...DEFAULT_SETTINGS, language: 'zh' };
     expect(enSettings.language).toBe('en');
     expect(zhSettings.language).toBe('zh');
+  });
+});
+
+describe('launchAuthLogin', () => {
+  let originalPlatform: string;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('calls exec with Windows terminal command on win32', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    launchAuthLogin();
+    expect(exec).toHaveBeenCalledTimes(1);
+    const cmd = (exec as any).mock.calls[0][0];
+    expect(cmd).toContain('start cmd');
+    expect(cmd).toContain('lark-cli auth login');
+  });
+
+  it('calls exec with macOS terminal command on darwin', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    launchAuthLogin();
+    expect(exec).toHaveBeenCalledTimes(1);
+    const cmd = (exec as any).mock.calls[0][0];
+    expect(cmd).toContain('osascript');
+    expect(cmd).toContain('lark-cli auth login');
+  });
+
+  it('calls exec with Linux terminal command on linux', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    launchAuthLogin();
+    expect(exec).toHaveBeenCalledTimes(1);
+    const cmd = (exec as any).mock.calls[0][0];
+    expect(cmd).toContain('x-terminal-emulator');
+    expect(cmd).toContain('lark-cli auth login');
+  });
+
+  it('exec callback does not throw when terminal launch succeeds', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    (exec as any).mockImplementationOnce((_cmd: string, cb: (err: any) => void) => {
+      expect(() => cb(null)).not.toThrow();
+    });
+    launchAuthLogin();
+  });
+
+  it('exec callback does not throw when terminal launch fails', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    (exec as any).mockImplementationOnce((_cmd: string, cb: (err: any) => void) => {
+      expect(() => cb(new Error('exec failed'))).not.toThrow();
+    });
+    launchAuthLogin();
   });
 });
