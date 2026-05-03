@@ -339,7 +339,13 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await expect(bridge.resolveFolderToken('Sync')).rejects.toThrow(FolderAmbiguousError);
+      try {
+        await bridge.resolveFolderToken('Sync');
+        expect.fail('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(FolderAmbiguousError);
+        expect((err as FolderAmbiguousError).matches).toEqual(['/A/Sync', '/B/Sync']);
+      }
     });
 
     it('retries on transient errors with exponential backoff', async () => {

@@ -50,6 +50,7 @@ export class ApiError extends Error {
     public statusCode: number,
     message: string,
     public code: string,
+    public data?: any,
   ) {
     super(message);
   }
@@ -116,7 +117,7 @@ export class FeishuCliBridge {
           if (stderr) {
             try {
               const parsed = JSON.parse(stderr);
-              reject(new ApiError(parsed.code ?? 1, parsed.msg ?? stderr, parsed.code?.toString() ?? 'UNKNOWN'));
+              reject(new ApiError(parsed.code ?? 1, parsed.msg ?? stderr, parsed.code?.toString() ?? 'UNKNOWN', parsed.data));
             } catch {
               reject(new ApiError(1, stderr || err.message, 'UNKNOWN'));
             }
@@ -219,7 +220,7 @@ export class FeishuCliBridge {
             throw new FolderNotFoundError(folderPath);
           }
           if (err.code === 'FOLDER_AMBIGUOUS' || err.statusCode === 409) {
-            throw new FolderAmbiguousError(folderPath, []);
+            throw new FolderAmbiguousError(folderPath, err.data?.matches || []);
           }
         }
         throw err;
