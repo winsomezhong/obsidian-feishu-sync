@@ -10,6 +10,10 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.resolvedFolderToken).toBe('');
   });
 
+  it('has default folderResolutionError as empty string', () => {
+    expect(DEFAULT_SETTINGS.folderResolutionError).toBe('');
+  });
+
   it('legacy folderToken field no longer exists in defaults', () => {
     expect((DEFAULT_SETTINGS as any).folderToken).toBeUndefined();
   });

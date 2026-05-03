@@ -4,6 +4,7 @@ import type { ProcessorConfig } from '../converter/preprocessor';
 export interface SyncPluginSettings {
   folderPath: string;
   resolvedFolderToken: string;
+  folderResolutionError: string;
   processorConfig: ProcessorConfig;
   syncOnSave: boolean;
 }
@@ -11,6 +12,7 @@ export interface SyncPluginSettings {
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
   folderPath: '',
   resolvedFolderToken: '',
+  folderResolutionError: '',
   processorConfig: {
     frontmatter: 'strip',
     wikilink: 'keep-text',
@@ -50,6 +52,7 @@ export class SyncSettingsTab extends PluginSettingTab {
         .onChange(async value => {
           this.plugin.settings.folderPath = value;
           this.plugin.settings.resolvedFolderToken = '';
+          this.plugin.settings.folderResolutionError = '';
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
           this.updateResolutionStatus();
@@ -154,16 +157,22 @@ export class SyncSettingsTab extends PluginSettingTab {
     if (!this.resolutionStatusEl) return;
     const token = this.plugin.settings?.resolvedFolderToken;
     const path = this.plugin.settings?.folderPath;
+    const error = this.plugin.settings?.folderResolutionError;
+
     if (!path) {
       this.resolutionStatusEl.setText('');
       return;
     }
+
     if (token) {
-      this.resolutionStatusEl.setText(' ✓ Resolved');
+      this.resolutionStatusEl.setText(` ✓ Resolved: ${path}`);
       this.resolutionStatusEl.style.color = 'green';
-    } else {
-      this.resolutionStatusEl.setText(' ⚠ Not resolved');
+    } else if (error) {
+      this.resolutionStatusEl.setText(` ⚠ ${error}`);
       this.resolutionStatusEl.style.color = 'red';
+    } else {
+      this.resolutionStatusEl.setText(' ⟳ Resolving folder path...');
+      this.resolutionStatusEl.style.color = 'var(--text-muted)';
     }
   }
 }
