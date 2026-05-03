@@ -39,6 +39,22 @@ async function waitForFile(folderToken: string, fileName: string, timeoutMs = 15
   );
 }
 
+/** Poll for file content on Drive to include expected text */
+async function waitForContent(folderToken: string, fileName: string, expected: string, timeoutMs = 20000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const file = feishu.findFile(folderToken, fileName);
+    if (file) {
+      try {
+        const content = feishu.getFileContent(file.token);
+        if (content.includes(expected)) return;
+      } catch {}
+    }
+    await sleep(1000);
+  }
+  throw new Error(`Content "${expected}" not found in "${fileName}" on Drive after ${timeoutMs}ms`);
+}
+
 /** Poll for file deletion from Drive */
 async function waitForFileGone(folderToken: string, fileName: string, timeoutMs = 15000): Promise<void> {
   return poll(
@@ -127,11 +143,8 @@ async function main(): Promise<void> {
     await waitForFile(folderToken!, 's2-test.md');
     // Append via filesystem — triggers Obsidian modify → plugin re-syncs
     obsidian.appendContentFs(FILE, '\nappended line');
-    await waitForFile(folderToken!, 's2-test.md');
-    const file = feishu.findFile(folderToken!, 's2-test.md');
-    assert(file !== null, 's2-test.md exists after modification');
-    const content = feishu.getFileContent(file!.token);
-    assert(content.includes('appended line'), 'content includes appended line');
+    // Wait for the Drive file content to include the appended text
+    await waitForContent(folderToken!, 's2-test.md', 'appended line');
     await ensureCleanState(FILE);
     await sleep(WAIT);
   });
