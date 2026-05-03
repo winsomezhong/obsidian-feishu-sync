@@ -1,5 +1,9 @@
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { e2eConfig } from './e2e.config';
+
+// --- Obsidian CLI wrappers (for create/read which work reliably) ---
 
 function cmd(args: string): string {
   const exe = e2eConfig.obsidianExe;
@@ -12,6 +16,7 @@ export interface CreateParams {
   path?: string;
 }
 
+/** Create file via Obsidian CLI (reliable) */
 export function createFile(params: CreateParams): void {
   let args = `create name="${params.name}"`;
   if (params.content) args += ` content="${params.content.replace(/\n/g, '\\n')}"`;
@@ -19,24 +24,42 @@ export function createFile(params: CreateParams): void {
   cmd(args);
 }
 
+/** Read file via Obsidian CLI (reliable with path= including .md) */
 export function readFile(params: { file: string }): string {
-  return cmd(`read file="${params.file}"`);
+  const param = params.file.includes('/') ? 'path' : 'file';
+  return cmd(`read ${param}="${params.file}"`);
 }
 
-export function deleteFile(params: { file: string; permanent?: boolean }): void {
-  let args = `delete file="${params.file}"`;
-  if (params.permanent !== false) args += ' permanent';
-  cmd(args);
+/** Delete file from Obsidian CLI (use path= with .md extension) */
+export function deleteFile(params: { file: string }): void {
+  const param = params.file.includes('/') ? 'path' : 'file';
+  cmd(`delete ${param}="${params.file}" permanent`);
 }
 
-export function moveFile(params: { file: string; to: string }): void {
-  cmd(`move file="${params.file}" to="${params.to}"`);
+// --- Direct filesystem operations (reliably trigger Obsidian events) ---
+
+function vaultFile(relative: string): string {
+  return path.join(e2eConfig.vaultPath, relative.replace(/^\//, ''));
 }
 
-export function renameFile(params: { file: string; name: string }): void {
-  cmd(`rename file="${params.file}" name="${params.name}"`);
+/** Write/overwrite file directly on filesystem — triggers Obsidian modify/create events */
+export function writeFileFs(relative: string, content: string): void {
+  const fullPath = vaultFile(relative);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content, 'utf-8');
 }
 
-export function appendContent(params: { file: string; content: string }): void {
-  cmd(`append file="${params.file}" content="${params.content.replace(/\n/g, '\\n')}"`);
+/** Append content to file directly on filesystem — triggers Obsidian modify event */
+export function appendContentFs(relative: string, content: string): void {
+  const fullPath = vaultFile(relative);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.appendFileSync(fullPath, content, 'utf-8');
+}
+
+/** Delete file directly on filesystem — triggers Obsidian delete event */
+export function deleteFileFs(relative: string): void {
+  const fullPath = vaultFile(relative);
+  if (fs.existsSync(fullPath)) {
+    fs.unlinkSync(fullPath);
+  }
 }
