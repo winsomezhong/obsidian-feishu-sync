@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGui
 import type { SyncPluginSettings } from './settings-tab';
 
 describe('DEFAULT_SETTINGS', () => {
-  it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, and lastPreflightTime', () => {
+  it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, and language', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('folderPath');
     expect(DEFAULT_SETTINGS).toHaveProperty('resolvedFolderToken');
     expect(DEFAULT_SETTINGS).toHaveProperty('folderResolutionError');
@@ -11,6 +11,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('cliVersion');
     expect(DEFAULT_SETTINGS).toHaveProperty('lastPreflightStatus');
     expect(DEFAULT_SETTINGS).toHaveProperty('lastPreflightTime');
+    expect(DEFAULT_SETTINGS).toHaveProperty('language');
   });
 
   it('folderPath defaults to empty string', () => {
@@ -39,6 +40,10 @@ describe('DEFAULT_SETTINGS', () => {
 
   it('lastPreflightTime defaults to undefined', () => {
     expect(DEFAULT_SETTINGS.lastPreflightTime).toBeUndefined();
+  });
+
+  it('language defaults to en', () => {
+    expect(DEFAULT_SETTINGS.language).toBe('en');
   });
 });
 

@@ -9,6 +9,7 @@ export interface SyncPluginSettings {
   cliVersion?: string;
   lastPreflightStatus?: PreflightStatus;
   lastPreflightTime?: number;
+  language: 'en' | 'zh';
 }
 
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
@@ -19,6 +20,7 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
   cliVersion: undefined,
   lastPreflightStatus: undefined,
   lastPreflightTime: undefined,
+  language: 'en',
 };
 
 export interface CliStatusDisplay {
