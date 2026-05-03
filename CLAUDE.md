@@ -2,122 +2,231 @@
 
 本文件为 Claude Code (claude.ai/code) 在此仓库中工作提供指引。
 
-## Project Overview
+## 项目概述
 
-This project syncs notes between **Obsidian** (local markdown note-taking) and **Feishu/Lark** (字节跳动 collaboration platform). It is in early development with no source code yet.
+本插件将 **Obsidian**（本地 Markdown 笔记）单向同步到 **飞书云盘**。项目处于活跃开发中（v0.1.0）。
 
-## Tech Stack (planned)
+## 技术栈
 
-- **Language**: TypeScript/Node.js
-- **Build**: Obsidian Plugin API + Rollup
-- **Platform**: Windows (development environment)
-- **Frameworks**: OpenSpec (spec-driven) + Superpowers (behavior discipline)
+- **语言**：TypeScript / Node.js
+- **构建**：Obsidian Plugin API + Rollup
+- **平台**：Windows（开发环境）
+- **框架**：OpenSpec（规范驱动）+ Agent Teams（多智能体编排）
 
-## 0. 全局工具路由规则
+## 0. 全局工具路由规则 — Agent Team 模式
 
-> **对于任何任务，第一步判断：当前需求适合哪条路径？**
+> **架构决策**：本项目使用 **Agent Teams + Superpowers 混合架构**。Agent Teams 负责宏观编排（创建团队、任务依赖图、队员孵化、并行协调），Superpowers 负责队员内部的微观执行纪律（writing-plans 拆解微任务、TDD 红绿重构、verification-before-completion 证据驱动验证、requesting-code-review 结构化审查）。两者不是替代关系，而是**编排层 + 执行层**的互补。
 
-### 路径 A：OpenSpec + Superpowers 联合（新功能 / 破坏性变更 / 架构变更）
+### 0.0 模式选择：Team 还是 Solo？
 
-**适用场景**：
-- 新功能/新能力开发（如：自定义同步范围过滤、增量同步优化）
-- API / Schema 破坏性变更
-- 架构/模式变更（如：从轮询改为 WebSocket 实时同步）
-- 预计耗时 > 30 分钟的任务
+| 条件 | 模式 | 理由 |
+|------|------|------|
+| 新功能 / 破坏性变更 / >30min | **Path A — Feature Team** | 多 Phase 需要专职 Spec + QA |
+| Bug 修复 / 小任务 / <30min | **Path B — Fix Team** | 审查可与实现并行 |
+| 纯规范维护 / 审计 | **Path C — Solo** | 只需 OpenSpec，无需团队 |
+| 拼写/格式/1-2行 | **Path D — Solo** | 无流程直接改 |
 
-**流程**：
-1. `/opsx:propose <change-name>` — 生成 proposal/design/specs/tasks
-2. **人类审阅 artifacts（15 分钟）** — 这是最关键的质量关卡
-3. ⏭️ ~~`/opsx:apply`~~ **禁止使用** → 改为 Superpowers 链路（见下方 ⚠️）
+---
 
-**逐 Phase 循环**（tasks.md 中有几个 Phase 就循环几次）：
-4. `Superpowers: writing-plans` — 读取当前 Phase 的 tasks，拆解为 2-5 分钟微任务
-5. `Superpowers: TDD` — RED → GREEN → REFACTOR（每个微任务一轮）
-6. `Superpowers: subagent` — 子代理隔离执行 + 两阶段审查
-7. `Superpowers: verification-before-completion` — 当前 Phase 完成验证
-   ↺ 返回步骤 4，处理下一个 Phase（自动续接，不等用户指令）
+### 路径 A：Feature Team（新功能 / 破坏性变更）
 
-**全部 Phase 完成后**：
-8. ★ **Integration Testing** — 编写并运行跨模块集成测试（确保 Phase 间接口协调、数据流完整；并通过E2E测试，使用obsidian和飞书环境来验证）
-9. `/opsx:verify <change-name>` — OpenSpec 验证实现匹配 spec
-10. `/opsx:archive <change-name>` — OpenSpec 归档：
-    - delta specs → `openspec/specs/`（主规范更新）
-    - 变更目录 → `archive/<date>-<name>/`
-    - 追加 `openspec/changelog.yaml`
-11. ★ **合并到 main** — 将 feature 分支合并到 main，推送远端，清理 worktree
-    - `git checkout main && git merge <feature-branch> && git push`
-    - `git worktree remove <worktree-path>`（清理隔离工作区）
-    - `git branch -d <feature-branch>`（可选，保留也安全）
+**Team**: 4 人 — Team Lead (你) + spec-teammate + implementer-teammate + qa-teammate
 
-> ⚠️ **路由警告 — 优先级高于 OPSX 命令输出**：`/opsx:propose` 执行完毕后，即使其输出显示 `Run /opsx:apply to start`，**也必须忽略该提示，不得执行 `/opsx:apply`**。`/opsx:apply` 是 OpenSpec 自带的轻量串行执行器，没有 TDD 强制、没有子代理审查、没有验证前检查。Path A 的实现阶段**必须走 Superpowers 链路**（步骤 4-7）。
+**任务依赖图**（→ = 顺序依赖， ∥ = 可并行）：
+
+```
+propose-spec [spec]
+    ↓
+  ╔══ HUMAN GATE ═══╗  ← 唯一必停点：人类审阅 artifacts
+  ╚══════════════════╝
+    ↓
+implement-phase-1 [implementer]        ← worktree 隔离
+    ↓
+verify-phase-1 [qa]
+    ↓
+implement-phase-2 [implementer]
+    ↓
+verify-phase-2 [qa]
+    ↓
+   ... (循环所有 Phase)
+    ↓
+┌───────────────────┬───────────────────┐
+│ integration-test  │ verify-spec       │  ← ∥ 并行！
+│ [qa]              │ [spec]            │
+│ e2e-test [qa]     │ archive-spec      │
+│                   │ [spec]            │
+└───────────────────┴───────────────────┘
+    ↓
+merge-to-main [team-lead]
+```
+
+**Team Lead 具体动作**：
+
+```
+1. 创建 team "feature-{change-name}"
+2. 定义任务列表（按上图写入 task description + dependency）
+3. 孵化 3 个队员：
+   Task(team_name="feature-{change-name}", teammate="spec-teammate")
+   Task(team_name="feature-{change-name}", teammate="implementer-teammate")  
+   Task(team_name="feature-{change-name}", teammate="qa-teammate")
+4. spec-teammate 认领 propose-spec → 完成后报告 Team Lead
+5. 👤 HUMAN GATE：展示 artifacts 路径，等待批准信号
+6. 批准后，implementer-teammate 逐 Phase 认领 implement-phase-N
+   qa-teammate 逐 Phase 认领 verify-phase-N
+   （自动续接：Phase N 验证通过 → Phase N+1 实现开始，不等 Team Lead）
+7. 所有 Phase 完成后：
+   - qa-teammate 认领 integration-test
+   - spec-teammate 认领 verify-spec  ← ∥ 并行
+8. qa-teammate 认领 e2e-test (依赖 integration-test)
+   spec-teammate 认领 archive-spec (依赖 verify-spec)
+9. Team Lead 执行 merge-to-main
+```
+
+> ⚠️ **HUMAN GATE 是唯一必停点**：Team Lead 在 propose-spec 完成后必须等待人类明确批准（"可以"/"开始"/"LGTM"/"+1"），不得自动续接。之后的 Phase 循环和验证全部自动执行。
 >
-> **自动续接规则**：
-> 1. 用户审阅 artifacts 并给出批准信号（如"可以"、"开始"、"LGTM"、"+1"等）后，Claude 自动进入逐 Phase 循环，不等待用户指令。
-> 2. 每个 Phase 完成后（步骤 7），自动返回步骤 4 处理下一个 Phase，不等待用户指令。
-> 3. 所有 Phase 完成后自动进入步骤 8-11（Integration Testing → verify → archive → 合并到 main），不等待用户指令。
-> 4. 整条链路从 propose 到合并到 main **只需用户介入两次**：输入 `/opsx:propose` + 审阅批准。
+> ⚠️ **禁止 `/opsx:apply`**：即使 OpenSpec 输出提示 `Run /opsx:apply to start`，也必须忽略。`/opsx:apply` 没有 TDD 强制、没有 QA 门控、没有审查。本项目的实现阶段全部由 implementer-teammate + qa-teammate 完成。
 
-### 路径 B：Superpowers 单独 + Spec 自动同步（Bug 修复 / 小任务 / 技术债务）
+---
 
-**适用场景**：
-- Bug 修复（恢复原有行为）
-- 非破坏性依赖升级
-- 小规模技术债务清理
-- 预计耗时 < 30 分钟的任务
+### 路径 B：Fix Team（Bug 修复 / 小任务 / 技术债务）
 
-**流程**：
-1. `Superpowers: brainstorming` — 澄清问题（一问一答）
-2. 创建 git worktree 隔离分支
-3. `Superpowers: TDD` — 测试先行（RED-GREEN-REFACTOR）
-4. `Superpowers: subagent` — 子代理隔离执行
-5. ★ **Regression Testing** — 运行全量测试（单元 + 集成），并通过E2E测试，使用obsidian和飞书环境来验证
-6. `Superpowers: requesting-code-review` — 代码审查
-7. ⚡ **Spec Impact Detector** — 自动扫描 diff，判定是否触及 spec
-   ├─ 无影响 → 继续第 8 步
-   └─ 有影响 →
-       ├─ 创建 `openspec/changes/auto-<ts>-<desc>/` 审计目录
-       ├─ 更新 `openspec/specs/`（主规范实时保持最新）
-       └─ 追加 `openspec/changelog.yaml`
-8. `Superpowers: finishing-a-development-branch` — 合并/清理
+**Team**: 3-4 人 — Team Lead (你) + implementer-teammate + review-teammate (+ qa-teammate 仅在需要回归测试时)
 
-> ⚡ **Spec Impact Detector 判定规则**：函数签名变更、新增/删除公开 API、配置项变更、错误行为变更、接口/类型定义变更 → 触发同步；纯内部重构、拼写格式、非行为依赖升级 → 跳过。
+**任务依赖图**：
 
-### 路径 C：OpenSpec 单独（知识管理 / 变更追溯）
+```
+brainstorm [team-lead]
+    ↓
+┌───────────────────┬───────────────────┐
+│ implement-fix     │ code-review       │  ← ∥ 并行！review 不等实现完成
+│ [implementer]     │ [review]          │
+│ worktree 隔离     │ 增量审查每次提交   │
+└───────────────────┴───────────────────┘
+    ↓                       ↓
+regression-test [qa] ←──────┘
+    ↓
+e2e-test [qa]
+    ↓
+spec-impact-check [review]  ← review-teammate 的第二个任务
+    ↓
+finish [team-lead]
+```
 
-**适用场景**：
-- 需要详细变更审计轨迹
-- 需要更新 `openspec/project.md` / 主规格文档
-- 跨 AI 工具团队协作需要统一规范
-- 纯规格维护，不涉及代码变更
+**Team Lead 具体动作**：
 
-**流程**：
-1. `/opsx:propose <change-name>` — 在 `changes/<name>/` 中生成工件
-2. `/opsx:apply <change-name>` — 按 tasks.md 执行
-3. `/opsx:verify <change-name>` — 验证实现匹配 spec
-4. `/opsx:archive <change-name>` — 归档：
-   - delta specs → `openspec/specs/`（主规范更新）
-   - 变更目录 → `archive/`
-   - 追加 `openspec/changelog.yaml`
+```
+1. 创建 team "fix-{brief-desc}"
+2. 定义任务列表（implement-fix 和 code-review 设为无相互依赖 → 可并行认领）
+3. 孵化队员：
+   Task(team_name="fix-{brief-desc}", teammate="implementer-teammate")  
+   Task(team_name="fix-{brief-desc}", teammate="review-teammate")
+   Task(team_name="fix-{brief-desc}", teammate="qa-teammate")  ← 可选，仅大修复
+4. Team Lead 自己做 brainstorming（小范围一问一答，不孵化队员）
+5. implementer-teammate 认领 implement-fix，review-teammate 同时认领 code-review
+   → review-teammate 每看到一次提交就增量审查，不等实现完成
+6. implement-fix 完成 → qa-teammate 认领 regression-test
+7. regression-test 通过 → qa-teammate 认领 e2e-test
+8. review-teammate 认领 spec-impact-check → 自动判定并回写
+9. Team Lead 执行 finish（合并 + 清理）
+```
 
-### 路径 D：直接实现（无需任何流程）
+> ⚡ **并行收益**：步骤 5 是 Agent Team 相比原先 Superpowers 串行链的核心优势——代码审查不再等实现完成，而是在第一次提交后就启动，实现和审查交替进行，大幅缩短总耗时。
 
-**适用场景**：
-- 拼写/格式/注释修复
-- 极小调整（1-2 行代码）
-- 纯配置修改（如调整轮询间隔）
+---
 
-## 1. OpenSpec Config
+### 路径 C：OpenSpec 单独（知识管理）— Solo 模式
 
-- Config: `openspec/config.yaml`
-- OPSX commands: `/opsx:propose` `/opsx:apply` `/opsx:verify` `/opsx:archive`
-- **Core Profile** 即可满足大部分场景
-- 切换 Expanded Profile 可启用 `/opsx:verify` 和 `/opsx:bulk-archive`
+**不创建 Team**，Team Lead 直接使用 spec-teammate（单次 subagent）或手工执行：
 
-## 2. Superpowers Config
+1. `/opsx:propose <change-name>` — 生成工件
+2. `/opsx:apply <change-name>` — 执行 tasks.md
+3. `/opsx:verify <change-name>` — 验证
+4. `/opsx:archive <change-name>` — 归档
 
-- Superpowers 通过 Claude Code 插件市场安装
-- 核心技能将自动激活：TDD、writing-plans、subagent-driven-development、verification-before-completion
-- 自定义技能可放置在 `.claude/skills/` 目录
+### 路径 D：直接实现 — Solo 模式
+
+直接修改。拼写/格式/1-2行/纯配置，不走任何流程。
+
+---
+
+### Team Lead 通用职责
+
+无论 Path A 还是 Path B，你（Team Lead）负责：
+
+| 职责 | 说明 |
+|------|------|
+| **创建团队** | 每次变更创建新 team，完成后清理 |
+| **定义任务图** | 写清楚每个 task 的 description + dependencies |
+| **孵化队员** | 用 Task 工具将队员加入团队 |
+| **人类门控** | Path A 的 propose→批准 必须等待人类信号 |
+| **监控进度** | 用 TaskList 查看团队状态，但不要微管理 |
+| **最终合并** | 所有 task completed 后，合并到 main + 推送 + 清理 |
+
+### 队员通信协议
+
+队员之间通过 **SendMessage** 通信（Agent Teams 原生能力）：
+
+| 发送方 | 接收方 | 消息内容 |
+|--------|--------|---------|
+| implementer | qa | "Phase N ready for verification at commit <hash>" |
+| qa | implementer | "Phase N test failure: <file>:<line> - <error>" |
+| review | implementer | "Review finding: <file>:<line> - <suggestion>" |
+| spec | Team Lead | "Spec artifacts ready at openspec/changes/<name>/" |
+| spec | qa | "verify-spec mismatch: <spec-section> not covered" |
+| 任何人 | Team Lead | "Blocked: <reason>" |
+
+> Team Lead **不主动打断队员**，除非收到 blocked 消息或 TaskList 显示长时间无进展。
+
+## 1. OpenSpec 配置
+
+- 配置文件：`openspec/config.yaml`
+- 命令：`/opsx:propose` `/opsx:apply` `/opsx:verify` `/opsx:archive`
+- **核心模式（Core Profile）** 即可满足大部分场景
+- 切换到扩展模式（Expanded Profile）可启用 `/opsx:verify` 和 `/opsx:bulk-archive`
+
+## 2. 混合架构配置
+
+### 架构总览
+
+```
+Agent Teams（宏观编排层）
+  ├── Team Lead 创建团队、定义任务依赖图、孵化队员
+  ├── 队员间 SendMessage 通信、共享 TaskList
+  └── 队员内部调用 Superpowers 执行微观纪律：
+        ├── implementer → writing-plans + TDD + subagent
+        ├── qa          → verification-before-completion
+        └── review      → requesting-code-review
+```
+
+### Agent Teams 配置
+
+- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 已在 `.claude/settings.local.json` 和 WSL `~/.claude/settings.json` 中启用
+- **启动方式**：`.\start-wsl-tmux.ps1` — 在 WSL2 + tmux 中启动，每个队员自动获得独立 pane
+- `teammateMode: "tmux"` 配置在 WSL 端
+
+### Superpowers 的角色
+
+Superpowers **不再作为顶层串行链**使用（原先的 Path A/B 已由 Agent Team 接管编排），而是**下沉为队员内部的执行纪律层**：
+
+| Superpowers Skill | 调用者 | 用途 |
+|-------------------|--------|------|
+| `writing-plans` | implementer-teammate | 将 Phase 拆解为 2-5 分钟微任务 |
+| `TDD` | implementer-teammate | 每个微任务强制 RED→GREEN→REFACTOR |
+| `subagent-driven-development` | implementer-teammate | 复杂微任务的隔离执行 |
+| `verification-before-completion` | qa-teammate | 证据驱动验证，禁止无证据断言 |
+| `requesting-code-review` | review-teammate | 按维度结构化审查，输出分级报告 |
+| `brainstorming` | Team Lead | Path B 步骤 1，需求澄清 |
+
+### 队员定义
+
+队员 persona 定义在 `.claude/agents/` 目录，每个文件同时声明了 Agent Team 角色和 Superpowers 内部调用规则：
+
+| 文件 | 队员 | 模型 | 隔离 | 内部调用的 Superpowers |
+|------|------|------|------|----------------------|
+| `spec-teammate.md` | spec-teammate | Opus | fork | 无（OpenSpec 原生） |
+| `implementer-teammate.md` | implementer-teammate | Sonnet | worktree | writing-plans + TDD + subagent |
+| `qa-teammate.md` | qa-teammate | Sonnet | fork | verification-before-completion |
+| `review-teammate.md` | review-teammate | Sonnet | fork | requesting-code-review |
 
 ## 3. 项目约定
 
@@ -129,7 +238,7 @@ This project syncs notes between **Obsidian** (local markdown note-taking) and *
 ### 测试规范
 - **单元测试**：使用 vitest，测试文件与被测文件同目录，后缀 `.test.ts`。遵循 TDD 原则：先写测试，再写实现
 - **集成测试**：`tests/integration/` 目录，后缀 `.integration.test.ts`。覆盖跨模块接口协调和数据流。所有 Phase 完成后自动编写并执行
-- **全量回归**：Path B 完成子代理执行后，必须运行 `npm test`（单元 + 集成），确认不引入回归
+- **全量回归**：Path B 完成子代理执行后，必须运行 `npm test`（单元 + 集成 + E2E），确认不引入回归
 
 ### 归档要求
 - 每次功能变更完成后必须运行 `/opsx:archive`
@@ -138,18 +247,18 @@ This project syncs notes between **Obsidian** (local markdown note-taking) and *
 
 ## 4. 快速参考
 
-| 场景 | 路径 | 主要命令 |
-|------|------|----------|
-| 添加新同步能力 | A | `/opsx:propose` → Superpowers TDD → ★Integration → `/opsx:archive` → ★合并到 main |
-| 修复同步 bug | B | `brainstorming` → TDD → ★Regression → ⚡auto-sync → finish |
-| 更新规格文档 | C | `/opsx:propose` → `/opsx:apply` → `/opsx:archive` |
-| 改注释/格式化 | D | 直接修改 |
+| 场景 | 路径 | 团队 | 核心动作 |
+|------|------|------|----------|
+| 添加新同步能力 | A — Feature Team | spec + implementer + qa | Team Lead 创建 team → spec propose → 👤批准 → implement+qa 逐 Phase → 并行 verify+integration → merge |
+| 修复同步 bug | B — Fix Team | implementer + review (+ qa) | Team Lead brainstorm → implement ∥ review → qa regression → review spec-impact → finish |
+| 更新规格文档 | C — Solo | 无 | `/opsx:propose` → `/opsx:apply` → `/opsx:archive` |
+| 改注释/格式化 | D — Solo | 无 | 直接修改 |
 
 ## 5. Spec Auto-Sync 机制（Path B → specs 回写）
 
 ### 5.1 为什么需要
 
-Path B（Superpowers 单独）不生成 OpenSpec artifacts，但 bug 修复或小任务可能改变 API 签名、接口类型、配置项、错误行为等 spec 覆盖的范围。若不回写，`openspec/specs/` 会逐渐与代码实际行为脱节。
+Path B（Fix Team 模式）不生成完整的 OpenSpec artifacts，但 bug 修复或小任务可能改变 API 签名、接口类型、配置项、错误行为等 spec 覆盖的范围。若不回写，`openspec/specs/` 会逐渐与代码实际行为脱节。
 
 ### 5.2 判定规则（Spec Impact Detector）
 
