@@ -3,6 +3,14 @@ import { FeishuCliBridge } from '../bridge/feishu-cli-bridge';
 import { SyncStatusTracker } from './sync-status-tracker';
 import { ConflictResolver } from './conflict-resolver';
 
+export interface SyncBatchResult {
+  successCount: number;
+  failCount: number;
+  errors: Array<{ path: string; error: Error }>;
+}
+
+export type AutoSyncResultCallback = (result: { path: string; success: boolean; error?: Error }) => void;
+
 export class SyncEngine {
   private running = false;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -19,6 +27,7 @@ export class SyncEngine {
     private resolver: ConflictResolver,
     private getFolderPath: () => string,
     private resolveFolderToken: (path: string) => Promise<string>,
+    private onAutoSyncResult?: AutoSyncResultCallback,
   ) {}
 
   start(): void {
@@ -165,7 +174,7 @@ export class SyncEngine {
     this.tracker.updateFileState(file.path, result.fileToken, file.stat.mtime);
   }
 
-  async syncAll(): Promise<void> {
+  async syncAll(): Promise<SyncBatchResult> {
     const files = this.plugin.app.vault.getMarkdownFiles();
     const errors: Array<{ path: string; error: Error }> = [];
     let successCount = 0;
@@ -182,6 +191,8 @@ export class SyncEngine {
     if (errors.length > 0) {
       console.warn(`SyncAll: ${successCount} succeeded, ${errors.length} failed:`, errors);
     }
+
+    return { successCount, failCount: errors.length, errors };
   }
 
   private onFileChange(file: TFile): void {
@@ -196,8 +207,10 @@ export class SyncEngine {
         this.debounceTimers.delete(file.path);
         try {
           await this.syncFile(file);
+          this.onAutoSyncResult?.({ path: file.path, success: true });
         } catch (err) {
           console.error(`Sync error for ${file.path}:`, err);
+          this.onAutoSyncResult?.({ path: file.path, success: false, error: err as Error });
         }
       }, 2000),
     );
@@ -214,10 +227,12 @@ export class SyncEngine {
           (err?.message && /already\s+deleted|not\s+found|does\s+not\s+exist/i.test(err.message));
         if (!isAlreadyDeleted) {
           console.error(`Failed to delete drive file for ${file.path}:`, err);
+          this.onAutoSyncResult?.({ path: file.path, success: false, error: err as Error });
           return;
         }
       }
       this.tracker.removeFileState(file.path);
+      this.onAutoSyncResult?.({ path: file.path, success: true });
     }
   }
 
@@ -230,8 +245,10 @@ export class SyncEngine {
         await this.bridge.moveFile(state.feishuFileToken, targetFolder);
         this.tracker.removeFileState(oldPath);
         this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
+        this.onAutoSyncResult?.({ path: file.path, success: true });
       } catch (err) {
         console.error(`Failed to move drive file for ${file.path}:`, err);
+        this.onAutoSyncResult?.({ path: file.path, success: false, error: err as Error });
       }
     }
   }

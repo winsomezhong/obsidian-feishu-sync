@@ -3,6 +3,7 @@ import { FeishuCliBridge } from './bridge/feishu-cli-bridge';
 import { SyncStatusTracker } from './sync/sync-status-tracker';
 import { ConflictResolver } from './sync/conflict-resolver';
 import { SyncEngine } from './sync/sync-engine';
+import { SyncNotifier } from './sync/sync-notifier';
 
 import { SyncLog } from './sync/sync-log';
 import { SyncSettingsTab, DEFAULT_SETTINGS } from './ui/settings-tab';
@@ -18,6 +19,28 @@ export default class FeishuSyncPlugin extends Plugin {
   syncLog!: SyncLog;
   settings!: SyncPluginSettings;
   statusBar!: SyncStatusBar;
+  private autoSyncBatch: Array<{ path: string; success: boolean; error?: Error }> = [];
+  private autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private flushAutoSyncNotices(): void {
+    if (this.autoSyncTimer) {
+      clearTimeout(this.autoSyncTimer);
+      this.autoSyncTimer = null;
+    }
+    const batch = this.autoSyncBatch;
+    this.autoSyncBatch = [];
+    if (batch.length === 0) return;
+    const successCount = batch.filter(r => r.success).length;
+    const failCount = batch.filter(r => !r.success).length;
+    const errors = batch.filter(r => !r.success).map(r => ({ path: r.path, error: r.error! }));
+    SyncNotifier.notifyBatch(successCount, failCount, errors.length > 0 ? errors : undefined);
+  }
+
+  private onAutoSyncResult(result: { path: string; success: boolean; error?: Error }): void {
+    this.autoSyncBatch.push(result);
+    if (this.autoSyncTimer) clearTimeout(this.autoSyncTimer);
+    this.autoSyncTimer = setTimeout(() => this.flushAutoSyncNotices(), 3000);
+  }
 
   async onload() {
     console.log('Loading Feishu Sync plugin');
@@ -47,6 +70,7 @@ export default class FeishuSyncPlugin extends Plugin {
       resolver,
       () => this.settings.folderPath,
       (path: string) => this.bridge.resolveFolderToken(path),
+      (result) => this.onAutoSyncResult(result),
     );
 
     // Preflight (now includes folder path resolution)
@@ -139,10 +163,10 @@ export default class FeishuSyncPlugin extends Plugin {
         if (!file || file.extension !== 'md') return false;
         if (!checking) {
           this.engine.syncFile(file).then(() => {
-            new Notice(`Synced ${file.name} to Feishu`);
+            SyncNotifier.notifySingle(file.name, true);
             this.syncLog.add({ timestamp: Date.now(), filePath: file.path, operation: 'update', status: 'success' });
           }).catch(err => {
-            new Notice(`Failed to sync ${file.name}: ${err.message}`, 5000);
+            SyncNotifier.notifySingle(file.name, false, err.message);
             this.syncLog.add({ timestamp: Date.now(), filePath: file.path, operation: 'error', status: 'failure', errorMessage: err.message });
           });
         }
@@ -157,12 +181,12 @@ export default class FeishuSyncPlugin extends Plugin {
         this.statusBar.updateDisplay('syncing');
         new Notice('Syncing all notes...');
         try {
-          await this.engine.syncAll();
+          const result = await this.engine.syncAll();
           this.statusBar.updateDisplay('ready');
-          new Notice('Sync complete');
+          SyncNotifier.notifyBatch(result.successCount, result.failCount, result.errors.length > 0 ? result.errors : undefined);
         } catch (err) {
           this.statusBar.updateDisplay('error', 'Sync failed');
-          new Notice(`Sync failed: ${(err as Error).message}`, 5000);
+          SyncNotifier.notifySingle('all notes', false, (err as Error).message);
         }
       },
     });
@@ -176,5 +200,9 @@ export default class FeishuSyncPlugin extends Plugin {
   async onunload() {
     console.log('Unloading Feishu Sync plugin');
     this.engine.stop();
+    if (this.autoSyncTimer) {
+      clearTimeout(this.autoSyncTimer);
+      this.autoSyncTimer = null;
+    }
   }
 }

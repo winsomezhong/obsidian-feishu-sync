@@ -468,14 +468,38 @@ describe('SyncEngine', () => {
   });
 
   describe('syncAll', () => {
-    it('iterates all markdown files', async () => {
+    it('iterates all markdown files and returns success count', async () => {
       const files = [{ path: 'a.md', extension: 'md' }, { path: 'b.md', extension: 'md' }] as any[];
       mockGetMarkdownFiles.mockReturnValue(files);
       vi.spyOn(engine, 'syncFile').mockResolvedValue();
 
-      await engine.syncAll();
+      const result = await engine.syncAll();
 
       expect(engine.syncFile).toHaveBeenCalledTimes(2);
+      expect(result.successCount).toBe(2);
+      expect(result.failCount).toBe(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('returns partial success with error details', async () => {
+      const files = [
+        { path: 'a.md', extension: 'md' },
+        { path: 'b.md', extension: 'md' },
+        { path: 'c.md', extension: 'md' },
+      ] as any[];
+      mockGetMarkdownFiles.mockReturnValue(files);
+      const syncFileSpy = vi.spyOn(engine, 'syncFile');
+      syncFileSpy.mockResolvedValueOnce();
+      syncFileSpy.mockRejectedValueOnce(new Error('Network error'));
+      syncFileSpy.mockResolvedValueOnce();
+
+      const result = await engine.syncAll();
+
+      expect(result.successCount).toBe(2);
+      expect(result.failCount).toBe(1);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].path).toBe('b.md');
+      expect(result.errors[0].error.message).toBe('Network error');
     });
   });
 });
