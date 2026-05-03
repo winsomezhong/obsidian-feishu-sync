@@ -105,7 +105,7 @@ describe('SyncEngine', () => {
   it('syncFile updates existing doc when state exists', async () => {
     resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 2000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
+    deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'doc1' } as any);
     deps.resolver.resolve.mockReturnValue('needs-sync');
     mockVaultRead.mockResolvedValue('# Updated');
 
@@ -115,10 +115,10 @@ describe('SyncEngine', () => {
     expect(deps.tracker.updateFileState).toHaveBeenCalledWith('note.md', 'doc1', 2000);
   });
 
-  it('syncFile creates new doc when state exists but feishuDocToken is empty', async () => {
+  it('syncFile creates new doc when state exists but feishuFileToken is empty', async () => {
     resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: '' } as any);
+    deps.tracker.getFileState.mockReturnValue({ feishuFileToken: '' } as any);
     deps.resolver.resolve.mockReturnValue('needs-sync');
     mockVaultRead.mockResolvedValue('# Hello');
     deps.bridge.createDocument.mockResolvedValue({ documentId: 'doc2', url: '' });
@@ -132,7 +132,7 @@ describe('SyncEngine', () => {
   it('syncFile skips file when resolver returns skip', async () => {
     resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
-    deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
+    deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'doc1' } as any);
     deps.resolver.resolve.mockReturnValue('skip');
 
     await engine.syncFile(mockFile);

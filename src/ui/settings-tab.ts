@@ -166,13 +166,13 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     if (token) {
       this.resolutionStatusEl.setText(` ✓ Resolved: ${path}`);
-      this.resolutionStatusEl.style.color = 'green';
+      ;(this.resolutionStatusEl as any).style.color = 'green';
     } else if (error) {
       this.resolutionStatusEl.setText(` ⚠ ${error}`);
-      this.resolutionStatusEl.style.color = 'red';
+      ;(this.resolutionStatusEl as any).style.color = 'red';
     } else {
       this.resolutionStatusEl.setText(' ⟳ Resolving folder path...');
-      this.resolutionStatusEl.style.color = 'var(--text-muted)';
+      ;(this.resolutionStatusEl as any).style.color = 'var(--text-muted)';
     }
   }
 }

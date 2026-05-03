@@ -81,15 +81,15 @@ export class SyncEngine {
     const content = await this.plugin.app.vault.read(file);
     const { content: processedContent } = this.preprocessor.process(content);
 
-    if (!state || !state.feishuDocToken) {
+    if (!state || !state.feishuFileToken) {
       const title = file.name.replace(/\.md$/, '');
       const fullContent = `# ${title}\n\n${processedContent}`;
       const result = await this.bridge.createDocument(title, fullContent, folderToken);
       this.tracker.updateFileState(file.path, result.documentId, file.stat.mtime);
     } else {
       const fullContent = `# ${file.name.replace(/\.md$/, '')}\n\n${processedContent}`;
-      await this.bridge.updateDocument(state.feishuDocToken, fullContent);
-      this.tracker.updateFileState(file.path, state.feishuDocToken, file.stat.mtime);
+      await this.bridge.updateDocument(state.feishuFileToken, fullContent);
+      this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
     }
   }
 
@@ -136,7 +136,7 @@ export class SyncEngine {
     const state = this.tracker.getFileState(file.path);
     if (state) {
       try {
-        await this.bridge.deleteDocument(state.feishuDocToken);
+        await this.bridge.deleteDocument(state.feishuFileToken);
       } catch (err) {
         console.error(`Failed to delete Feishu doc for ${file.path}:`, err);
       }
@@ -149,12 +149,12 @@ export class SyncEngine {
     const state = this.tracker.getFileState(oldPath);
     if (state) {
       this.tracker.removeFileState(oldPath);
-      this.tracker.updateFileState(file.path, state.feishuDocToken, file.stat.mtime);
+      this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
       try {
         const title = file.name.replace(/\.md$/, '');
         const content = await this.plugin.app.vault.read(file);
         const { content: processedContent } = this.preprocessor.process(content);
-        await this.bridge.updateDocument(state.feishuDocToken, `# ${title}\n\n${processedContent}`);
+        await this.bridge.updateDocument(state.feishuFileToken, `# ${title}\n\n${processedContent}`);
       } catch (err) {
         console.error(`Failed to update Feishu title for ${file.path}:`, err);
       }
