@@ -8,4 +8,3 @@ main.js
 *.d.ts.map
 /.worktrees
 /openspec
-/docs

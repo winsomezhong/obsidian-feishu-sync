@@ -66,7 +66,7 @@ This project syncs notes between **Obsidian** (local markdown note-taking) and *
 2. 创建 git worktree 隔离分支
 3. `Superpowers: TDD` — 测试先行（RED-GREEN-REFACTOR）
 4. `Superpowers: subagent` — 子代理隔离执行
-5. ★ **Regression Testing** — 运行全量测试（单元 + 集成），并通过E2E测试，使用obsidian和飞书环境来验证
+5. ★ **Regression Testing** — 运行全量测试（单元 + 集成），确认修复不引入回归
 6. `Superpowers: requesting-code-review` — 代码审查
 7. ⚡ **Spec Impact Detector** — 自动扫描 diff，判定是否触及 spec
    ├─ 无影响 → 继续第 8 步

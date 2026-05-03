@@ -36,7 +36,7 @@ describe('project scaffolding', () => {
   });
 
   it('directory structure should exist', () => {
-    const dirs = ['sync', 'converter', 'bridge', 'ui'];
+    const dirs = ['sync', 'bridge', 'ui'];
     for (const dir of dirs) {
       const fullPath = path.join(ROOT, 'src', dir);
       expect(fs.existsSync(fullPath)).toBe(true);

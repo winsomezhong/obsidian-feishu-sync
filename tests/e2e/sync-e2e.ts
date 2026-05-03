@@ -4,7 +4,7 @@ import * as obsidian from './obsidian-cli';
 import * as feishu from './feishu-verifier';
 
 const TEST_PREFIX = e2eConfig.testPrefix; // "raw/"
-const ROOT_FOLDER_TOKEN = feishu.getRootFolderToken();
+const FOLDER_TOKEN = e2eConfig.folderToken;
 const WAIT = e2eConfig.debounceWaitMs;
 
 function sleep(ms: number): Promise<void> {
@@ -64,30 +64,17 @@ async function waitForFileGone(folderToken: string, fileName: string, timeoutMs 
   );
 }
 
-function resolveFolderToken(vaultPath: string): string | null {
-  if (!vaultPath || vaultPath === TEST_PREFIX.replace(/\/$/, '')) {
-    return ROOT_FOLDER_TOKEN;
-  }
-  const segments = vaultPath.split('/').filter(Boolean);
-  let currentToken: string | null = ROOT_FOLDER_TOKEN;
-  for (const seg of segments) {
-    if (!currentToken) return null;
-    const subfolderToken = feishu.findSubfolder(currentToken, seg);
-    if (!subfolderToken) return null;
-    currentToken = subfolderToken;
-  }
-  return currentToken;
-}
-
 /** Delete files from both Obsidian (CLI) and Drive */
 async function ensureCleanState(...paths: string[]): Promise<void> {
+  // Clean Obsidian side via filesystem (more reliable than CLI delete)
   for (const filePath of paths) {
     obsidian.deleteFileFs(filePath);
   }
+  // Clean Drive side
   for (const filePath of paths) {
     const fileName = filePath.split('/').pop()!;
     const folder = filePath.replace(`/${fileName}`, '');
-    const folderToken = resolveFolderToken(folder);
+    const folderToken = resolveFolderToken(folder, false);
     if (folderToken) {
       const found = feishu.findFile(folderToken, fileName);
       if (found) {
@@ -95,6 +82,21 @@ async function ensureCleanState(...paths: string[]): Promise<void> {
       }
     }
   }
+}
+
+function resolveFolderToken(vaultPath: string, verbose = true): string | null {
+  if (!vaultPath || vaultPath === TEST_PREFIX.replace(/\/$/, '')) {
+    return FOLDER_TOKEN;
+  }
+  const segments = vaultPath.split('/').filter(Boolean);
+  let currentToken: string | null = FOLDER_TOKEN;
+  for (const seg of segments) {
+    if (!currentToken) return null;
+    const subfolderToken = feishu.findSubfolder(currentToken, seg);
+    if (!subfolderToken) return null;
+    currentToken = subfolderToken;
+  }
+  return currentToken;
 }
 
 async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
@@ -109,16 +111,14 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const configFolderPath = e2eConfig.folderPath;
-  const configFolderToken = e2eConfig.folderToken;
+  if (!FOLDER_TOKEN) {
+    console.error('FEISHU_FOLDER_TOKEN env var is required');
+    process.exit(1);
+  }
 
   console.log('=== E2E Sync Tests ===');
   console.log(`Test prefix: ${TEST_PREFIX}`);
   console.log(`Wait time: ${WAIT}ms`);
-  if (configFolderPath) {
-    console.log(`Folder path: ${configFolderPath}`);
-  }
-  console.log(`Root folder token: ${ROOT_FOLDER_TOKEN.slice(0, 8)}...`);
 
   // Scenario 1: New file sync
   await runTest('S1: New file sync', async () => {
@@ -141,7 +141,9 @@ async function main(): Promise<void> {
     const folderToken = resolveFolderToken(TEST_PREFIX);
     assert(folderToken !== null, 'folder token resolved');
     await waitForFile(folderToken!, 's2-test.md');
+    // Append via filesystem — triggers Obsidian modify → plugin re-syncs
     obsidian.appendContentFs(FILE, '\nappended line');
+    // Wait for the Drive file content to include the appended text
     await waitForContent(folderToken!, 's2-test.md', 'appended line');
     await ensureCleanState(FILE);
     await sleep(WAIT);
@@ -155,6 +157,7 @@ async function main(): Promise<void> {
     const folderToken = resolveFolderToken(TEST_PREFIX);
     assert(folderToken !== null, 'folder token resolved');
     await waitForFile(folderToken!, 's3-test.md');
+    // Delete via filesystem — triggers Obsidian delete → plugin removes from Drive
     obsidian.deleteFileFs(FILE);
     await waitForFileGone(folderToken!, 's3-test.md');
     await ensureCleanState(FILE);
@@ -170,8 +173,10 @@ async function main(): Promise<void> {
     const srcFolder = resolveFolderToken(TEST_PREFIX);
     assert(srcFolder !== null, 'source folder token resolved');
     await waitForFile(srcFolder!, 's4-test.md');
+    // Delete source — instead of fs.unlink (may EBUSY), use Obsidian CLI delete
     obsidian.deleteFile({ file: `${TEST_PREFIX}s4-test.md` });
     await waitForFileGone(srcFolder!, 's4-test.md');
+    // Create in new location
     obsidian.createFile({ name: 's4-test.md', content: '# Moved content', path: 'archive/' });
     const dstFolder = resolveFolderToken('archive');
     assert(dstFolder !== null, 'archive/ folder resolved');
@@ -186,7 +191,7 @@ async function main(): Promise<void> {
     await ensureCleanState(FILE);
     obsidian.createFile({ name: 's5-file.md', content: '# Deep', path: 'deep/nested/' });
     await sleep(WAIT);
-    const deepFolder = feishu.findSubfolder(ROOT_FOLDER_TOKEN, 'deep');
+    const deepFolder = feishu.findSubfolder(FOLDER_TOKEN, 'deep');
     assert(deepFolder !== null, 'deep/ folder exists');
     const nestedFolder = feishu.findSubfolder(deepFolder!, 'nested');
     assert(nestedFolder !== null, 'nested/ folder exists');

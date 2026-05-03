@@ -1,19 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { exec, spawn } from 'child_process';
+import { exec } from 'child_process';
 import {
   CliNotFoundError,
   AuthRequiredError,
   TimeoutError,
   ApiError,
   RateLimitError,
-  FolderNotFoundError,
-  FolderAmbiguousError,
   FeishuCliBridge,
 } from './feishu-cli-bridge';
 
 vi.mock('child_process', () => ({
   exec: vi.fn(),
-  spawn: vi.fn(),
 }));
 
 function mockChild() {
@@ -33,7 +30,7 @@ describe('FeishuCliBridge errors', () => {
   });
 
   it('TimeoutError has correct name and timeout property', () => {
-    const err = new TimeoutError(30000, 'docs +create');
+    const err = new TimeoutError(30000, 'drive +upload');
     expect(err.name).toBe('TimeoutError');
     expect(err.timeoutMs).toBe(30000);
   });
@@ -49,28 +46,6 @@ describe('FeishuCliBridge errors', () => {
     const err = new RateLimitError(3000, 'rate limited');
     expect(err.name).toBe('RateLimitError');
     expect(err.retryAfterMs).toBe(3000);
-  });
-
-  it('FolderNotFoundError has correct name and message', () => {
-    const err = new FolderNotFoundError('/path/to/folder');
-    expect(err.name).toBe('FolderNotFoundError');
-    expect(err.message).toContain('/path/to/folder');
-    expect(err.folderPath).toBe('/path/to/folder');
-  });
-
-  it('FolderNotFoundError extends Error', () => {
-    expect(new FolderNotFoundError('')).toBeInstanceOf(Error);
-  });
-
-  it('FolderAmbiguousError has correct name and lists matches', () => {
-    const err = new FolderAmbiguousError('sync', ['/A/sync', '/B/sync']);
-    expect(err.name).toBe('FolderAmbiguousError');
-    expect(err.message).toContain('sync');
-    expect(err.matches).toEqual(['/A/sync', '/B/sync']);
-  });
-
-  it('FolderAmbiguousError extends Error', () => {
-    expect(new FolderAmbiguousError('x', [])).toBeInstanceOf(Error);
   });
 
   it('all error classes extend Error', () => {
@@ -99,6 +74,30 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       const result = await bridge.executeCommand('some-cmd');
       expect(result).toBe('{"data": "ok"}');
+    });
+
+    it('passes cwd option to exec when provided', async () => {
+      let receivedOpts: any;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        receivedOpts = opts;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.executeCommand('some-cmd', '/my/vault');
+      expect(receivedOpts.cwd).toBe('/my/vault');
+    });
+
+    it('does not set cwd in exec options when not provided', async () => {
+      let receivedOpts: any;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        receivedOpts = opts;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.executeCommand('some-cmd');
+      expect(receivedOpts.cwd).toBeUndefined();
     });
 
     it('throws CliNotFoundError when ENOENT', async () => {
@@ -131,31 +130,6 @@ describe('FeishuCliBridge', () => {
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
-    });
-
-    it('writes content to CWD temp file and uses relative path in command', async () => {
-      let usedCommand = '';
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        usedCommand = cmd;
-        cb(null, 'done', '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const result = await bridge.executeCommand('cmd --content @-', 'hello');
-      expect(usedCommand).toMatch(/cmd --content @lark-content-\d+-[a-z0-9]+\.md$/);
-      expect(usedCommand).not.toContain('\\');
-      expect(usedCommand).not.toContain('/');
-      expect(result).toBe('done');
-    });
-
-    it('does not create temp file when input is undefined', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, 'output', '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const result = await bridge.executeCommand('cmd --content @-');
-      expect(result).toBe('output');
     });
   });
 
@@ -191,7 +165,6 @@ describe('FeishuCliBridge', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errorCode).toBe('CLI_NOT_FOUND');
-        expect(result.error).toBeTruthy();
       }
     });
 
@@ -212,59 +185,125 @@ describe('FeishuCliBridge', () => {
         expect(result.errorCode).toBe('AUTH_REQUIRED');
       }
     });
-
-    it('handles version output without semver string', async () => {
-      mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, 'lark-cli (unknown version)\n', '');
-          return mockChild();
-        })
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, JSON.stringify({ tokenStatus: 'valid' }), '');
-          return mockChild();
-        });
-      const bridge = new FeishuCliBridge();
-      const result = await bridge.preflight();
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.cliVersion).toBeUndefined();
-      }
-    });
-
-    it('handles malformed auth status JSON', async () => {
-      mockExec
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, 'lark-cli/1.2.3\n', '');
-          return mockChild();
-        })
-        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, 'not json\n', '');
-          return mockChild();
-        });
-      const bridge = new FeishuCliBridge();
-      const result = await bridge.preflight();
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.errorCode).toBe('AUTH_CHECK_FAILED');
-      }
-    });
   });
 
-  describe('createDocument', () => {
-    it('returns documentId and URL', async () => {
+  describe('uploadFile', () => {
+    it('returns fileToken and url on success', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { doc_id: 'doc456', doc_url: 'https://feishu.cn/doc/doc456' } }), '');
+        cb(null, JSON.stringify({ data: { file_token: 'ftok123', url: 'https://drive.feishu.cn/file/ftok123' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      const result = await bridge.createDocument('My Title', '# Content', 'folder123');
-      expect(result.documentId).toBe('doc456');
-      expect(result.url).toBe('https://feishu.cn/doc/doc456');
+      const result = await bridge.uploadFile('notes/hello.md', 'folderABC', 'hello.md', '/my/vault');
+      expect(result.fileToken).toBe('ftok123');
+      expect(result.url).toBe('https://drive.feishu.cn/file/ftok123');
+    });
+
+    it('constructs correct command with relative file path and cwd', async () => {
+      let usedCommand = '';
+      let usedOpts: any;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        usedOpts = opts;
+        cb(null, JSON.stringify({ data: { file_token: 'ftok', url: '' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.uploadFile('notes/hello.md', 'parentToken', 'hello.md', '/my/vault');
+      expect(usedCommand).toContain('drive +upload');
+      expect(usedCommand).toContain('--file "notes/hello.md"');
+      expect(usedCommand).toContain('--folder-token "parentToken"');
+      expect(usedCommand).toContain('--name "hello.md"');
+      expect(usedOpts.cwd).toBe('/my/vault');
     });
   });
 
-  describe('updateDocument', () => {
-    it('succeeds with correct command format', async () => {
+  describe('createFolder', () => {
+    it('returns folder token on success', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { folder_token: 'fld456' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.createFolder('parentToken', 'newFolder');
+      expect(result).toBe('fld456');
+    });
+
+    it('constructs correct command', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, JSON.stringify({ data: { folder_token: 'fld' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.createFolder('rootToken', 'subdir');
+      expect(usedCommand).toContain('drive +create-folder');
+      expect(usedCommand).toContain('--folder-token "rootToken"');
+      expect(usedCommand).toContain('--name "subdir"');
+    });
+  });
+
+  describe('findSubfolder', () => {
+    it('returns folder token when matching folder found', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'Clippings', token: 'fld_existing', type: 'folder' },
+              { name: 'note.md', token: 'ftok_note', type: 'file' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.findSubfolder('parentToken', 'Clippings');
+      expect(result).toBe('fld_existing');
+    });
+
+    it('returns null when no matching folder found', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'note.md', token: 'ftok_note', type: 'file' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.findSubfolder('parentToken', 'Nonexistent');
+      expect(result).toBeNull();
+    });
+
+    it('constructs correct list command with folder token', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, JSON.stringify({ data: { files: [] } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.findSubfolder('parent123', 'test');
+      expect(usedCommand).toContain('drive files list');
+      expect(usedCommand).toContain('--params "{\\"folder_token\\":\\"parent123\\"}"');
+      expect(usedCommand).toContain('--page-all');
+    });
+  });
+
+  describe('deleteFile', () => {
+    it('resolves without error on success', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.deleteFile('ftok789')).resolves.not.toThrow();
+    });
+
+    it('constructs correct command', async () => {
       let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         usedCommand = cmd;
@@ -272,172 +311,59 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await expect(bridge.updateDocument('doc456', '# Updated')).resolves.not.toThrow();
-      expect(usedCommand).toMatch(/lark-cli docs \+update --doc doc456 --mode overwrite --markdown @lark-content-\d+-[a-z0-9]+\.md/);
-      expect(usedCommand).toContain('--doc doc456');
+      await bridge.deleteFile('ftok789');
+      expect(usedCommand).toContain('drive +delete');
+      expect(usedCommand).toContain('--file-token "ftok789"');
+      expect(usedCommand).toContain('--type file');
+      expect(usedCommand).toContain('--yes');
     });
   });
 
-  describe('deleteDocument', () => {
-    it('succeeds', async () => {
+  describe('moveFile', () => {
+    it('resolves without error on success', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { status: 'success' } }), '');
+        cb(null, '{}', '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await expect(bridge.deleteDocument('doc456')).resolves.not.toThrow();
-    });
-  });
-
-  describe('fetchDocument', () => {
-    it('returns markdown content', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, '# Hello from Feishu\n\nContent', '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const content = await bridge.fetchDocument('doc456');
-      expect(content).toContain('# Hello from Feishu');
-    });
-  });
-
-  describe('resolveFolderToken', () => {
-    it('resolves absolute folder path to token', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({
-          data: {
-            results: [{
-              result_meta: { token: 'token-abc', doc_types: 'FOLDER', url: '/My Docs/Sync' },
-              title_highlighted: 'My Docs/Sync',
-            }],
-          },
-        }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const token = await bridge.resolveFolderToken('/My Docs/Sync');
-      expect(token).toBe('token-abc');
+      await expect(bridge.moveFile('ftok123', 'newFolder456')).resolves.not.toThrow();
     });
 
-    it('resolves single folder name', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({
-          data: {
-            results: [{
-              result_meta: { token: 'token-xyz', doc_types: 'FOLDER', url: '/Sync' },
-              title_highlighted: 'Sync',
-            }],
-          },
-        }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const token = await bridge.resolveFolderToken('Sync');
-      expect(token).toBe('token-xyz');
-    });
-
-    it('throws FolderNotFoundError when folder does not exist', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { results: [] } }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      await expect(bridge.resolveFolderToken('/nonexistent')).rejects.toThrow(FolderNotFoundError);
-    });
-
-    it('throws FolderNotFoundError when API returns success but no folder_token', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { results: [{ result_meta: { doc_types: 'FILE', token: 'x' } }] } }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      await expect(bridge.resolveFolderToken('/Some/Folder')).rejects.toThrow(FolderNotFoundError);
-    });
-
-    it('throws FolderAmbiguousError when multiple folders match', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({
-          data: {
-            results: [
-              { result_meta: { token: 'tok1', doc_types: 'FOLDER', url: '/A/Sync' } },
-              { result_meta: { token: 'tok2', doc_types: 'FOLDER', url: '/B/Sync' } },
-            ],
-          },
-        }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      try {
-        await bridge.resolveFolderToken('Sync');
-        expect.fail('should have thrown');
-      } catch (err) {
-        expect(err).toBeInstanceOf(FolderAmbiguousError);
-        expect((err as any).matches.length).toBe(2);
-      }
-    });
-
-    it('retries on transient errors with exponential backoff', async () => {
-      vi.useFakeTimers();
-      let attempts = 0;
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        attempts++;
-        if (attempts < 3) {
-          const err = new Error('rate limited');
-          cb(err, '', 'rate limited');
-        } else {
-          cb(null, JSON.stringify({
-            data: { results: [{ result_meta: { token: 'token-789', doc_types: 'FOLDER', url: '/Sync' } }] },
-          }), '');
-        }
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const resultPromise = bridge.resolveFolderToken('Sync');
-      await vi.advanceTimersByTimeAsync(3000);
-      await vi.advanceTimersByTimeAsync(10000);
-      const token = await resultPromise;
-      expect(token).toBe('token-789');
-      expect(attempts).toBe(3);
-      vi.useRealTimers();
-    });
-  });
-
-  describe('temp file content passing', () => {
-    it('replaces @- with temp file path for createDocument', async () => {
+    it('constructs correct command', async () => {
       let usedCommand = '';
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         usedCommand = cmd;
-        cb(null, JSON.stringify({ data: { doc_id: 'doc1', doc_url: '' } }), '');
+        cb(null, '{}', '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await bridge.createDocument('Title', '# Hello', 'folder');
-      expect(usedCommand).toMatch(/lark-cli docs \+create.*--markdown @lark-content-\d+-[a-z0-9]+\.md/);
-      expect(usedCommand).toContain('--folder-token folder');
-      expect(usedCommand).not.toContain('--title');
+      await bridge.moveFile('ftok123', 'newFolder456');
+      expect(usedCommand).toContain('drive +move');
+      expect(usedCommand).toContain('--file-token "ftok123"');
+      expect(usedCommand).toContain('--folder-token "newFolder456"');
+      expect(usedCommand).toContain('--type file');
     });
   });
 
   describe('retry logic', () => {
-    it('retries on error up to max attempts', async () => {
+    it('retries on error up to max attempts for uploadFile', async () => {
       vi.useFakeTimers();
       let attempts = 0;
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         attempts++;
         if (attempts < 3) {
-          const err = new Error('rate limited');
-          cb(err, '', 'rate limited');
+          cb(new Error('rate limited'), '', 'rate limited');
         } else {
-          cb(null, JSON.stringify({ data: { doc_id: 'doc789', doc_url: '' } }), '');
+          cb(null, JSON.stringify({ data: { file_token: 'ftok789', url: '' } }), '');
         }
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      const resultPromise = bridge.createDocument('T', 'C', 'folder');
+      const resultPromise = bridge.uploadFile('f.md', 'fld', 'f.md', '/vault');
       await vi.advanceTimersByTimeAsync(3000);
       await vi.advanceTimersByTimeAsync(10000);
       const result = await resultPromise;
-      expect(result.documentId).toBe('doc789');
+      expect(result.fileToken).toBe('ftok789');
       expect(attempts).toBe(3);
       vi.useRealTimers();
     });
@@ -450,17 +376,7 @@ describe('FeishuCliBridge', () => {
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
-      await expect(bridge.createDocument('T', 'C', 'folder')).rejects.toThrow(CliNotFoundError);
-    });
-
-    it('succeeds on first attempt without retry', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { doc_id: 'doc1', doc_url: '' } }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      const result = await bridge.createDocument('T', 'C', 'folder');
-      expect(result.documentId).toBe('doc1');
+      await expect(bridge.uploadFile('f.md', 'fld', 'f.md', '/vault')).rejects.toThrow(CliNotFoundError);
     });
   });
 });

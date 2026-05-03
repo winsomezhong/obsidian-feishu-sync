@@ -1,5 +1,5 @@
-export interface DocumentResult {
-  documentId: string;
+export interface UploadResult {
+  fileToken: string;
   url: string;
 }
 

@@ -17,41 +17,6 @@ function cmd(args: string): string {
   }) as unknown as string;
 }
 
-let _rootFolderTokenCache: string | null = null;
-
-/** Resolve root folder token from folderPath or folderToken config */
-export function getRootFolderToken(): string {
-  if (_rootFolderTokenCache) return _rootFolderTokenCache;
-
-  // Prefer folderPath: resolve it to token via lark-cli
-  if (e2eConfig.folderPath) {
-    const stdout = cmd(
-      `drive +search --query "${e2eConfig.folderPath}" --doc-types folder`,
-    );
-    let parsed: any;
-    try {
-      parsed = JSON.parse(stdout);
-    } catch {
-      throw new Error(`Failed to resolve folder path: ${e2eConfig.folderPath}`);
-    }
-    const results = parsed?.data?.results;
-    const folders = results?.filter((r: any) => r?.result_meta?.doc_types === 'FOLDER') || [];
-    if (folders.length === 0) {
-      throw new Error(`Folder path not found: ${e2eConfig.folderPath}`);
-    }
-    _rootFolderTokenCache = folders[0].result_meta.token;
-    return _rootFolderTokenCache;
-  }
-
-  // Fallback: use folderToken directly
-  if (e2eConfig.folderToken) {
-    _rootFolderTokenCache = e2eConfig.folderToken;
-    return e2eConfig.folderToken;
-  }
-
-  throw new Error('FEISHU_FOLDER_PATH or FEISHU_FOLDER_TOKEN env var is required');
-}
-
 export function listFiles(folderToken: string): DriveFile[] {
   const params = JSON.stringify({ folder_token: folderToken });
   const escapedParams = params.replace(/"/g, '\\"');

@@ -2,22 +2,18 @@ import { Plugin, TFile } from 'obsidian';
 import { FeishuCliBridge } from '../bridge/feishu-cli-bridge';
 import { SyncStatusTracker } from './sync-status-tracker';
 import { ConflictResolver } from './conflict-resolver';
-import { Preprocessor } from '../converter/preprocessor';
 
 export class SyncEngine {
   private running = false;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-  private cachedFolderToken: string | null = null;
-  private cachedFolderPath: string | null = null;
+  private folderCache: Map<string, string> = new Map();
 
   constructor(
     private plugin: Plugin,
     private bridge: FeishuCliBridge,
     private tracker: SyncStatusTracker,
     private resolver: ConflictResolver,
-    private preprocessor: Preprocessor,
-    private getFolderPath: () => string,
-    private resolveFolderToken: (path: string) => Promise<string>,
+    private getFolderToken: () => string,
   ) {}
 
   start(): void {
@@ -42,55 +38,68 @@ export class SyncEngine {
     this.running = false;
     this.debounceTimers.forEach(t => clearTimeout(t));
     this.debounceTimers.clear();
+    this.folderCache.clear();
   }
 
   isRunning(): boolean {
     return this.running;
   }
 
-  private async getResolvedFolderToken(): Promise<string> {
-    const currentPath = this.getFolderPath();
-    if (!currentPath) return '';
+  async ensureFolderPath(filePath: string): Promise<string> {
+    const segments = filePath.split('/');
+    segments.pop(); // remove filename
+    if (segments.length === 0) return this.getFolderToken();
 
-    if (this.cachedFolderToken !== null && this.cachedFolderPath === currentPath) {
-      return this.cachedFolderToken;
+    let currentParentToken = this.getFolderToken();
+    let currentPath = '';
+
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      const cached = this.folderCache.get(currentPath);
+      if (cached) {
+        currentParentToken = cached;
+        continue;
+      }
+      const existing = await this.bridge.findSubfolder(currentParentToken, segment);
+      if (existing) {
+        currentParentToken = existing;
+      } else {
+        currentParentToken = await this.bridge.createFolder(currentParentToken, segment);
+      }
+      this.folderCache.set(currentPath, currentParentToken);
     }
 
-    const token = await this.resolveFolderToken(currentPath);
-    this.cachedFolderToken = token;
-    this.cachedFolderPath = currentPath;
-    return token;
+    return currentParentToken;
   }
 
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
-
-    const folderPath = this.getFolderPath();
-    if (!folderPath) {
-      console.warn('Feishu Sync: folder path not set, skipping', file.path);
+    if (!this.getFolderToken()) {
+      console.warn('Feishu Sync: folder token not set, skipping', file.path);
       return;
     }
-
-    const folderToken = await this.getResolvedFolderToken();
-    if (!folderToken) return;
 
     const state = this.tracker.getFileState(file.path);
     const decision = this.resolver.resolve(file.stat.mtime, state);
     if (decision === 'skip') return;
 
-    const content = await this.plugin.app.vault.read(file);
-    const { content: processedContent } = this.preprocessor.process(content);
-
-    if (!state || !state.feishuFileToken) {
-      const title = file.name.replace(/\.md$/, '');
-      const fullContent = `# ${title}\n\n${processedContent}`;
-      const result = await this.bridge.createDocument(title, fullContent, folderToken);
-      this.tracker.updateFileState(file.path, result.documentId, file.stat.mtime);
-    } else {
-      const fullContent = `# ${file.name.replace(/\.md$/, '')}\n\n${processedContent}`;
-      await this.bridge.updateDocument(state.feishuFileToken, fullContent);
-      this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
+    if (state?.feishuFileToken) {
+      try {
+        await this.bridge.deleteFile(state.feishuFileToken);
+      } catch (err: any) {
+        if (err?.code === '1061007' || (err?.message && err.message.includes('delete'))) {
+          console.warn(`Feishu Sync: old file already deleted for ${file.path}, skipping delete`);
+        } else {
+          throw err;
+        }
+      }
     }
+
+    const folderToken = await this.ensureFolderPath(file.path);
+    const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
+
+    const result = await this.bridge.uploadFile(file.path, folderToken, file.name, vaultBasePath);
+    this.tracker.updateFileState(file.path, result.fileToken, file.stat.mtime);
   }
 
   async syncAll(): Promise<void> {
@@ -136,9 +145,9 @@ export class SyncEngine {
     const state = this.tracker.getFileState(file.path);
     if (state) {
       try {
-        await this.bridge.deleteDocument(state.feishuFileToken);
+        await this.bridge.deleteFile(state.feishuFileToken);
       } catch (err) {
-        console.error(`Failed to delete Feishu doc for ${file.path}:`, err);
+        console.error(`Failed to delete drive file for ${file.path}:`, err);
       }
       this.tracker.removeFileState(file.path);
     }
@@ -148,15 +157,13 @@ export class SyncEngine {
     if (file.extension !== 'md') return;
     const state = this.tracker.getFileState(oldPath);
     if (state) {
-      this.tracker.removeFileState(oldPath);
-      this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
       try {
-        const title = file.name.replace(/\.md$/, '');
-        const content = await this.plugin.app.vault.read(file);
-        const { content: processedContent } = this.preprocessor.process(content);
-        await this.bridge.updateDocument(state.feishuFileToken, `# ${title}\n\n${processedContent}`);
+        const targetFolder = await this.ensureFolderPath(file.path);
+        await this.bridge.moveFile(state.feishuFileToken, targetFolder);
+        this.tracker.removeFileState(oldPath);
+        this.tracker.updateFileState(file.path, state.feishuFileToken, file.stat.mtime);
       } catch (err) {
-        console.error(`Failed to update Feishu title for ${file.path}:`, err);
+        console.error(`Failed to move drive file for ${file.path}:`, err);
       }
     }
   }

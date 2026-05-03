@@ -1,7 +1,5 @@
 import { exec } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import type { DocumentResult, PreflightResult } from '../types';
+import type { UploadResult, PreflightResult } from '../types';
 
 export class CliNotFoundError extends Error {
   name = 'CliNotFoundError';
@@ -81,29 +79,11 @@ export class FeishuCliBridge {
     if (!this.config.cliPath) this.config.cliPath = DEFAULT_CONFIG.cliPath;
   }
 
-  executeCommand(command: string, input?: string): Promise<string> {
-    let absoluteTempPath: string | undefined;
-    let tempFileName: string | undefined;
-    if (input !== undefined && command.includes('@-')) {
-      tempFileName = `lark-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
-      absoluteTempPath = path.join(process.cwd(), tempFileName);
-      try {
-        fs.writeFileSync(absoluteTempPath, input, 'utf-8');
-      } catch (e) {
-        throw new Error(`Failed to write temp file at ${absoluteTempPath}: ${(e as Error).message}`);
-      }
-      command = command.replace('@-', '@' + tempFileName);
-    }
-
+  executeCommand(command: string, cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const fullCmd = command;
-
-      const child = exec(fullCmd, { encoding: 'utf-8', timeout: this.config.timeoutMs }, (err, stdout, stderr) => {
-        if (absoluteTempPath) {
-          try { fs.unlinkSync(absoluteTempPath); } catch (e) {
-            console.warn('Feishu Sync: failed to clean up temp file', absoluteTempPath, (e as Error).message);
-          }
-        }
+      const opts: any = { encoding: 'utf-8', timeout: this.config.timeoutMs };
+      if (cwd) opts.cwd = cwd;
+      const child = exec(command, opts, (err, stdout, stderr) => {
         if (err) {
           const nodeErr = err as NodeJS.ErrnoException;
           if (nodeErr.code === 'ENOENT' || (err.message && err.message.includes('not found'))) {
@@ -111,7 +91,7 @@ export class FeishuCliBridge {
             return;
           }
           if ((err as any).killed || (err.message && err.message.includes('timeout'))) {
-            reject(new TimeoutError(this.config.timeoutMs, fullCmd));
+            reject(new TimeoutError(this.config.timeoutMs, command));
             return;
           }
           if (stderr) {
@@ -179,28 +159,44 @@ export class FeishuCliBridge {
     });
   }
 
-  async createDocument(title: string, content: string, folderToken: string): Promise<DocumentResult> {
-    const cmd = `${this.config.cliPath} docs +create --folder-token ${folderToken} --markdown @-`;
+  async uploadFile(localPath: string, folderToken: string, fileName: string, cwd?: string): Promise<UploadResult> {
+    const cmd = `${this.config.cliPath} drive +upload --file "${localPath}" --folder-token "${folderToken}" --name "${fileName}"`;
     return this.withRetry(async () => {
-      const stdout = await this.executeCommand(cmd, content);
+      const stdout = await this.executeCommand(cmd, cwd);
       const data = JSON.parse(stdout).data;
-      return { documentId: data.doc_id, url: data.doc_url };
+      return { fileToken: data.file_token, url: data.url };
     });
   }
 
-  async updateDocument(docToken: string, content: string): Promise<void> {
-    const cmd = `${this.config.cliPath} docs +update --doc ${docToken} --mode overwrite --markdown @-`;
-    await this.withRetry(() => this.executeCommand(cmd, content));
+  async createFolder(parentToken: string, folderName: string): Promise<string> {
+    const cmd = `${this.config.cliPath} drive +create-folder --folder-token "${parentToken}" --name "${folderName}"`;
+    return this.withRetry(async () => {
+      const stdout = await this.executeCommand(cmd);
+      return JSON.parse(stdout).data.folder_token;
+    });
   }
 
-  async deleteDocument(docToken: string): Promise<void> {
-    const cmd = `${this.config.cliPath} drive +delete --file-token ${docToken} --type docx --yes`;
+  async findSubfolder(parentToken: string, folderName: string): Promise<string | null> {
+    const params = JSON.stringify({ folder_token: parentToken });
+    const escapedParams = params.replace(/"/g, '\\"');
+    const cmd = `${this.config.cliPath} drive files list --params "${escapedParams}" --page-all`;
+    return this.withRetry(async () => {
+      const stdout = await this.executeCommand(cmd);
+      const files = JSON.parse(stdout).data?.files;
+      if (!files || !Array.isArray(files)) return null;
+      const found = files.find((f: any) => f.name === folderName && f.type === 'folder');
+      return found ? found.token : null;
+    });
+  }
+
+  async deleteFile(fileToken: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +delete --file-token "${fileToken}" --type file --yes`;
     await this.withRetry(() => this.executeCommand(cmd));
   }
 
-  async fetchDocument(docToken: string): Promise<string> {
-    const cmd = `${this.config.cliPath} docs +fetch --api-version v2 --doc ${docToken} --doc-format markdown`;
-    return this.withRetry(() => this.executeCommand(cmd));
+  async moveFile(fileToken: string, targetFolderToken: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +move --file-token "${fileToken}" --folder-token "${targetFolderToken}" --type file`;
+    await this.withRetry(() => this.executeCommand(cmd));
   }
 
   async resolveFolderToken(folderPath: string): Promise<string> {
