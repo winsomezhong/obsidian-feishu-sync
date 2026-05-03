@@ -2,8 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from './settings-tab';
 
 describe('DEFAULT_SETTINGS', () => {
-  it('has default folder token as empty string', () => {
-    expect(DEFAULT_SETTINGS.folderToken).toBe('');
+  it('has default folderPath as empty string', () => {
+    expect(DEFAULT_SETTINGS.folderPath).toBe('');
+  });
+
+  it('has default resolvedFolderToken as empty string', () => {
+    expect(DEFAULT_SETTINGS.resolvedFolderToken).toBe('');
+  });
+
+  it('legacy folderToken field no longer exists in defaults', () => {
+    expect((DEFAULT_SETTINGS as any).folderToken).toBeUndefined();
   });
 
   it('has syncOnSave enabled by default', () => {

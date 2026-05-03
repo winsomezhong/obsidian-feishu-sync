@@ -2,13 +2,15 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import type { ProcessorConfig } from '../converter/preprocessor';
 
 export interface SyncPluginSettings {
-  folderToken: string;
+  folderPath: string;
+  resolvedFolderToken: string;
   processorConfig: ProcessorConfig;
   syncOnSave: boolean;
 }
 
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
-  folderToken: '',
+  folderPath: '',
+  resolvedFolderToken: '',
   processorConfig: {
     frontmatter: 'strip',
     wikilink: 'keep-text',
