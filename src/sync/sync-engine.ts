@@ -8,6 +8,7 @@ export class SyncEngine {
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private folderCache: Map<string, string> = new Map();
   private folderLocks: Map<string, Promise<string>> = new Map();
+  private fileLocks: Map<string, Promise<void>> = new Map();
   private cachedFolderToken: string | null = null;
   private cachedFolderPath: string | null = null;
 
@@ -44,6 +45,7 @@ export class SyncEngine {
     this.debounceTimers.clear();
     this.folderCache.clear();
     this.folderLocks.clear();
+    this.fileLocks.clear();
     this.cachedFolderToken = null;
     this.cachedFolderPath = null;
   }
@@ -110,6 +112,25 @@ export class SyncEngine {
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
 
+    const inflight = this.fileLocks.get(file.path);
+    if (inflight) {
+      await inflight;
+      const state = this.tracker.getFileState(file.path);
+      if (state && state.lastLocalMtime >= file.stat.mtime) return;
+    }
+
+    const lock = this.doSyncFile(file);
+    this.fileLocks.set(file.path, lock);
+    try {
+      await lock;
+    } finally {
+      if (this.fileLocks.get(file.path) === lock) {
+        this.fileLocks.delete(file.path);
+      }
+    }
+  }
+
+  private async doSyncFile(file: TFile): Promise<void> {
     const folderPath = this.getFolderPath();
     if (!folderPath) {
       console.warn('Feishu Sync: folder path not set, skipping', file.path);

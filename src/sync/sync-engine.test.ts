@@ -185,6 +185,81 @@ describe('SyncEngine', () => {
       expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
     });
 
+    it('serializes concurrent syncFile calls for the same file (only one upload)', async () => {
+      const mockFile = {
+        path: 'notes/dup.md',
+        name: 'dup.md',
+        extension: 'md',
+        stat: { mtime: 1000 },
+      } as any;
+
+      const stateMap: Record<string, any> = {};
+      deps.tracker.getFileState.mockImplementation((path: string) => stateMap[path] || null);
+      deps.tracker.updateFileState.mockImplementation(
+        (path: string, token: string, mtime: number) => {
+          stateMap[path] = { feishuFileToken: token, lastLocalMtime: mtime };
+        },
+      );
+      deps.resolver.resolve.mockImplementation((mtime: number, state: any) => {
+        if (!state) return 'needs-sync';
+        if (mtime > state.lastLocalMtime) return 'needs-sync';
+        return 'skip';
+      });
+
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+
+      let resolveUpload: (v: { fileToken: string; url: string }) => void = () => {};
+      const uploadPromise = new Promise<{ fileToken: string; url: string }>(r => { resolveUpload = r; });
+      deps.bridge.uploadFile.mockReturnValue(uploadPromise);
+
+      const call1 = engine.syncFile(mockFile);
+      const call2 = engine.syncFile(mockFile);
+
+      resolveUpload({ fileToken: 'ftok_only', url: '' });
+      await Promise.all([call1, call2]);
+
+      expect(deps.bridge.uploadFile).toHaveBeenCalledTimes(1);
+      expect(deps.tracker.updateFileState).toHaveBeenCalledTimes(1);
+      expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/dup.md', 'ftok_only', 1000);
+    });
+
+    it('re-syncs if file modified while previous sync was in-flight', async () => {
+      const mockFile = {
+        path: 'notes/mod.md',
+        name: 'mod.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue(null);
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+
+      let resolveUpload1: (v: { fileToken: string; url: string }) => void = () => {};
+      const uploadPromise1 = new Promise<{ fileToken: string; url: string }>(r => { resolveUpload1 = r; });
+      deps.bridge.uploadFile.mockReturnValueOnce(uploadPromise1);
+
+      const call1 = engine.syncFile(mockFile);
+
+      const mockFile2 = { ...mockFile, stat: { mtime: 3000 } };
+      deps.resolver.resolve.mockReturnValueOnce('needs-sync');
+      deps.tracker.getFileState.mockReturnValueOnce(null);
+      deps.bridge.uploadFile.mockReturnValueOnce(
+        Promise.resolve({ fileToken: 'ftok_after', url: '' }),
+      );
+      const call2 = engine.syncFile(mockFile2);
+
+      resolveUpload1({ fileToken: 'ftok_first', url: '' });
+      await call1;
+
+      await call2;
+
+      expect(deps.bridge.uploadFile).toHaveBeenCalledTimes(2);
+    });
+
     it('skips when folder token resolution returns empty', async () => {
       const engineNoToken = new SyncEngine(
         plugin, deps.bridge, deps.tracker, deps.resolver,
