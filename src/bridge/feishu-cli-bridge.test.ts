@@ -348,6 +348,15 @@ describe('FeishuCliBridge', () => {
       }
     });
 
+    it('throws FolderNotFoundError when API returns success but no folder_token', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { path: '/Some/Folder' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.resolveFolderToken('/Some/Folder')).rejects.toThrow(FolderNotFoundError);
+    });
+
     it('retries on transient errors with exponential backoff', async () => {
       vi.useFakeTimers();
       let attempts = 0;

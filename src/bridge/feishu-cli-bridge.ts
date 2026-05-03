@@ -208,7 +208,12 @@ export class FeishuCliBridge {
     return this.withRetry(async () => {
       try {
         const stdout = await this.executeCommand(cmd);
-        const data = JSON.parse(stdout).data;
+        let data: any;
+        try {
+          data = JSON.parse(stdout).data;
+        } catch {
+          throw new FolderNotFoundError(folderPath);
+        }
         if (!data || !data.folder_token) {
           throw new FolderNotFoundError(folderPath);
         }
