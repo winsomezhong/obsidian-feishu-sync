@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
 };
 
 export class SyncSettingsTab extends PluginSettingTab {
+  private resolutionStatusEl: HTMLElement | null = null;
+
   constructor(
     app: App,
     private plugin: any,
@@ -39,17 +41,22 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: 'Feishu Sync Settings' });
 
-    new Setting(containerEl)
-      .setName('Folder token')
-      .setDesc('Feishu Drive folder token for document sync')
+    const folderPathSetting = new Setting(containerEl)
+      .setName('Folder path')
+      .setDesc('Feishu Drive folder path for document sync (e.g., /My Documents/Sync)')
       .addText(text => text
-        .setPlaceholder('Enter folder token')
-        .setValue((this.plugin.settings?.folderToken || ''))
+        .setPlaceholder('/My Documents/Sync')
+        .setValue((this.plugin.settings?.folderPath || ''))
         .onChange(async value => {
-          this.plugin.settings.folderToken = value;
+          this.plugin.settings.folderPath = value;
+          this.plugin.settings.resolvedFolderToken = '';
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
+          this.updateResolutionStatus();
         }));
+
+    this.resolutionStatusEl = folderPathSetting.descEl.createSpan({ cls: 'feishu-sync-resolution-status' });
+    this.updateResolutionStatus();
 
     new Setting(containerEl)
       .setName('Sync on save')
@@ -141,5 +148,22 @@ export class SyncSettingsTab extends PluginSettingTab {
             this.onSettingsChange(this.plugin.settings);
           }
         }));
+  }
+
+  private updateResolutionStatus(): void {
+    if (!this.resolutionStatusEl) return;
+    const token = this.plugin.settings?.resolvedFolderToken;
+    const path = this.plugin.settings?.folderPath;
+    if (!path) {
+      this.resolutionStatusEl.setText('');
+      return;
+    }
+    if (token) {
+      this.resolutionStatusEl.setText(' ✓ Resolved');
+      this.resolutionStatusEl.style.color = 'green';
+    } else {
+      this.resolutionStatusEl.setText(' ⚠ Not resolved');
+      this.resolutionStatusEl.style.color = 'red';
+    }
   }
 }
