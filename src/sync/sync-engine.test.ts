@@ -160,6 +160,58 @@ describe('SyncEngine', () => {
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('notes/tech.md', 'ftok_new', 2000);
     });
 
+    it('throws when deleteFile fails with a real error (not already-deleted)', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      deps.bridge.deleteFile.mockRejectedValue({ code: 'PERMISSION_DENIED', message: 'permission denied for delete' });
+
+      await expect(engine.syncFile(mockFile)).rejects.toThrow();
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('throws when deleteFile fails with error code 1061006', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      deps.bridge.deleteFile.mockRejectedValue({ code: '1061006', message: 'some other error' });
+
+      await expect(engine.syncFile(mockFile)).rejects.toThrow();
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('handles already-deleted error with code as number', async () => {
+      const mockFile = {
+        path: 'notes/tech.md',
+        name: 'tech.md',
+        extension: 'md',
+        stat: { mtime: 2000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_gone' });
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('folderXYZ');
+      deps.bridge.deleteFile.mockRejectedValue({ code: 1061007, message: 'not found' });
+      deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok_new', url: '' });
+
+      await engine.syncFile(mockFile);
+
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok_gone');
+      expect(deps.bridge.uploadFile).toHaveBeenCalled();
+      expect(deps.tracker.updateFileState).toHaveBeenCalled();
+    });
+
     it('skips non-md files', async () => {
       const mockFile = { path: 'image.png', extension: 'png', stat: { mtime: 1000 } } as any;
       await engine.syncFile(mockFile);
@@ -371,6 +423,26 @@ describe('SyncEngine', () => {
       // @ts-ignore
       await engine.onFileDelete(mockFile);
       expect(deps.bridge.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('still removes state when delete fails with already-deleted error', async () => {
+      const mockFile = { path: 'note.md', extension: 'md' } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_del' });
+      deps.bridge.deleteFile.mockRejectedValue({ code: '1061007', message: 'file already deleted' });
+      // @ts-ignore
+      await engine.onFileDelete(mockFile);
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok_del');
+      expect(deps.tracker.removeFileState).toHaveBeenCalledWith('note.md');
+    });
+
+    it('does not remove state when delete fails with real error', async () => {
+      const mockFile = { path: 'note.md', extension: 'md' } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_del' });
+      deps.bridge.deleteFile.mockRejectedValue({ code: 'NETWORK_ERROR', message: 'network failure' });
+      // @ts-ignore
+      await engine.onFileDelete(mockFile);
+      expect(deps.bridge.deleteFile).toHaveBeenCalledWith('ftok_del');
+      expect(deps.tracker.removeFileState).not.toHaveBeenCalled();
     });
   });
 
