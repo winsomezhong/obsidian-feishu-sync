@@ -104,6 +104,15 @@ export default class FeishuSyncPlugin extends Plugin {
       this.settings.lastPreflightTime = preflightSettings.lastPreflightTime;
       if (!refreshResult.success) {
         this.settings.folderResolutionError = refreshResult.error || 'Preflight failed';
+      } else if (this.settings.folderPath) {
+        try {
+          const resolvedToken = await this.bridge.resolveFolderToken(this.settings.folderPath);
+          this.settings.resolvedFolderToken = resolvedToken;
+          this.settings.folderResolutionError = '';
+        } catch (err) {
+          this.settings.resolvedFolderToken = '';
+          this.settings.folderResolutionError = (err as Error).message;
+        }
       }
       await this.saveData(this.settings);
       // The settings tab display() will re-run via the refresh callback

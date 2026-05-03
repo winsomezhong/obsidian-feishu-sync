@@ -109,6 +109,7 @@ export class SyncSettingsTab extends PluginSettingTab {
   private authGuidanceEl: HTMLElement | null = null;
   private refreshButtonEl: HTMLElement | null = null;
   private isRefreshing = false;
+  private resolveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     app: App,
@@ -206,6 +207,23 @@ export class SyncSettingsTab extends PluginSettingTab {
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
           this.updateResolutionStatus();
+
+          if (this.resolveTimeout) clearTimeout(this.resolveTimeout);
+          if (value) {
+            this.resolveTimeout = setTimeout(async () => {
+              try {
+                const token = await this.plugin.bridge.resolveFolderToken(value);
+                this.plugin.settings.resolvedFolderToken = token;
+                this.plugin.settings.folderResolutionError = '';
+              } catch (err) {
+                this.plugin.settings.resolvedFolderToken = '';
+                this.plugin.settings.folderResolutionError = (err as Error).message;
+              }
+              await this.plugin.saveData(this.plugin.settings);
+              this.onSettingsChange(this.plugin.settings);
+              this.updateResolutionStatus();
+            }, 500);
+          }
         }));
 
     this.resolutionStatusEl = folderPathSetting.descEl.createSpan({ cls: 'feishu-sync-resolution-status' });
