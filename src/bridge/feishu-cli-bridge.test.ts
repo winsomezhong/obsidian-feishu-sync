@@ -6,6 +6,8 @@ import {
   TimeoutError,
   ApiError,
   RateLimitError,
+  FolderNotFoundError,
+  FolderAmbiguousError,
   FeishuCliBridge,
 } from './feishu-cli-bridge';
 
@@ -47,6 +49,28 @@ describe('FeishuCliBridge errors', () => {
     const err = new RateLimitError(3000, 'rate limited');
     expect(err.name).toBe('RateLimitError');
     expect(err.retryAfterMs).toBe(3000);
+  });
+
+  it('FolderNotFoundError has correct name and message', () => {
+    const err = new FolderNotFoundError('/path/to/folder');
+    expect(err.name).toBe('FolderNotFoundError');
+    expect(err.message).toContain('/path/to/folder');
+    expect(err.folderPath).toBe('/path/to/folder');
+  });
+
+  it('FolderNotFoundError extends Error', () => {
+    expect(new FolderNotFoundError('')).toBeInstanceOf(Error);
+  });
+
+  it('FolderAmbiguousError has correct name and lists matches', () => {
+    const err = new FolderAmbiguousError('sync', ['/A/sync', '/B/sync']);
+    expect(err.name).toBe('FolderAmbiguousError');
+    expect(err.message).toContain('sync');
+    expect(err.matches).toEqual(['/A/sync', '/B/sync']);
+  });
+
+  it('FolderAmbiguousError extends Error', () => {
+    expect(new FolderAmbiguousError('x', [])).toBeInstanceOf(Error);
   });
 
   it('all error classes extend Error', () => {

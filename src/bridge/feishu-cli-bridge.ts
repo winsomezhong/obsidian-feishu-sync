@@ -27,6 +27,23 @@ export class TimeoutError extends Error {
   }
 }
 
+export class FolderNotFoundError extends Error {
+  name = 'FolderNotFoundError';
+  constructor(public folderPath: string) {
+    super(`Folder not found: "${folderPath}"`);
+  }
+}
+
+export class FolderAmbiguousError extends Error {
+  name = 'FolderAmbiguousError';
+  constructor(
+    public folderPath: string,
+    public matches: string[],
+  ) {
+    super(`Ambiguous folder path "${folderPath}". Matches: ${matches.join(', ')}`);
+  }
+}
+
 export class ApiError extends Error {
   name = 'ApiError';
   constructor(
