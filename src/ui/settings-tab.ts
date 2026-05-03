@@ -1,16 +1,22 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 
 export interface SyncPluginSettings {
-  folderToken: string;
+  folderPath: string;
+  resolvedFolderToken: string;
+  folderResolutionError: string;
   syncOnSave: boolean;
 }
 
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
-  folderToken: '',
+  folderPath: '',
+  resolvedFolderToken: '',
+  folderResolutionError: '',
   syncOnSave: true,
 };
 
 export class SyncSettingsTab extends PluginSettingTab {
+  private resolutionStatusEl: HTMLElement | null = null;
+
   constructor(
     app: App,
     private plugin: any,
@@ -25,17 +31,23 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: 'Feishu Sync Settings' });
 
-    new Setting(containerEl)
-      .setName('Sync root folder token')
-      .setDesc('Feishu Drive folder token for file sync (files are uploaded preserving vault directory structure under this folder)')
+    const folderPathSetting = new Setting(containerEl)
+      .setName('Folder path')
+      .setDesc('Feishu Drive folder path for file sync (e.g., /My Documents/Sync)')
       .addText(text => text
-        .setPlaceholder('Enter folder token')
-        .setValue((this.plugin.settings?.folderToken || ''))
+        .setPlaceholder('/My Documents/Sync')
+        .setValue((this.plugin.settings?.folderPath || ''))
         .onChange(async value => {
-          this.plugin.settings.folderToken = value;
+          this.plugin.settings.folderPath = value;
+          this.plugin.settings.resolvedFolderToken = '';
+          this.plugin.settings.folderResolutionError = '';
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
+          this.updateResolutionStatus();
         }));
+
+    this.resolutionStatusEl = folderPathSetting.descEl.createSpan({ cls: 'feishu-sync-resolution-status' });
+    this.updateResolutionStatus();
 
     new Setting(containerEl)
       .setName('Sync on save')
@@ -47,5 +59,28 @@ export class SyncSettingsTab extends PluginSettingTab {
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
         }));
+  }
+
+  private updateResolutionStatus(): void {
+    if (!this.resolutionStatusEl) return;
+    const token = this.plugin.settings?.resolvedFolderToken;
+    const path = this.plugin.settings?.folderPath;
+    const error = this.plugin.settings?.folderResolutionError;
+
+    if (!path) {
+      this.resolutionStatusEl.setText('');
+      return;
+    }
+
+    if (token) {
+      this.resolutionStatusEl.setText(` ✓ Resolved: ${path}`);
+      (this.resolutionStatusEl as any).style.color = 'green';
+    } else if (error) {
+      this.resolutionStatusEl.setText(` ⚠ ${error}`);
+      (this.resolutionStatusEl as any).style.color = 'red';
+    } else {
+      this.resolutionStatusEl.setText(' ⟳ Resolving folder path...');
+      (this.resolutionStatusEl as any).style.color = 'var(--text-muted)';
+    }
   }
 }

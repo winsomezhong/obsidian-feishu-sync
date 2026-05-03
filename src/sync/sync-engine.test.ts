@@ -51,16 +51,29 @@ function createMockDeps() {
   };
 }
 
+function createEngine(plugin: any, deps: ReturnType<typeof createMockDeps>, resolveToken?: any) {
+  return new SyncEngine(
+    plugin,
+    deps.bridge,
+    deps.tracker,
+    deps.resolver,
+    () => 'root-token',
+    resolveToken ?? vi.fn().mockResolvedValue('root-token'),
+  );
+}
+
 describe('SyncEngine', () => {
   let engine: SyncEngine;
   let plugin: any;
   let deps: ReturnType<typeof createMockDeps>;
+  let mockResolveToken: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     plugin = createMockPlugin();
     deps = createMockDeps();
-    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, () => 'root-token');
+    mockResolveToken = vi.fn().mockResolvedValue('root-token');
+    engine = createEngine(plugin, deps, mockResolveToken);
   });
 
   it('start() registers event listeners', () => {
@@ -93,6 +106,7 @@ describe('SyncEngine', () => {
       deps.tracker.getFileState.mockReturnValue(null);
       deps.resolver.resolve.mockReturnValue('needs-sync');
       mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
       deps.bridge.createFolder.mockResolvedValue('folderXYZ');
       deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok1', url: '' });
 
@@ -113,6 +127,7 @@ describe('SyncEngine', () => {
       deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok1' });
       deps.resolver.resolve.mockReturnValue('needs-sync');
       mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
       deps.bridge.createFolder.mockResolvedValue('folderXYZ');
       deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok2', url: '' });
 
@@ -133,6 +148,7 @@ describe('SyncEngine', () => {
       deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_gone' });
       deps.resolver.resolve.mockReturnValue('needs-sync');
       mockAdapterGetBasePath.mockReturnValue('/my/vault');
+      deps.bridge.findSubfolder.mockResolvedValue(null);
       deps.bridge.createFolder.mockResolvedValue('folderXYZ');
       deps.bridge.deleteFile.mockRejectedValue({ code: '1061007', message: 'file has been delete' });
       deps.bridge.uploadFile.mockResolvedValue({ fileToken: 'ftok_new', url: '' });
@@ -158,8 +174,23 @@ describe('SyncEngine', () => {
       expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('skips when folder token is empty', async () => {
-      const engineNoToken = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, () => '');
+    it('skips when folder path is empty', async () => {
+      const engineNoPath = new SyncEngine(
+        plugin, deps.bridge, deps.tracker, deps.resolver,
+        () => '',
+        mockResolveToken,
+      );
+      const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
+      await engineNoPath.syncFile(mockFile);
+      expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('skips when folder token resolution returns empty', async () => {
+      const engineNoToken = new SyncEngine(
+        plugin, deps.bridge, deps.tracker, deps.resolver,
+        () => '/bad/path',
+        vi.fn().mockResolvedValue(''),
+      );
       const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
       await engineNoToken.syncFile(mockFile);
       expect(deps.bridge.uploadFile).not.toHaveBeenCalled();
@@ -210,6 +241,22 @@ describe('SyncEngine', () => {
     });
   });
 
+  describe('getResolvedFolderToken caching', () => {
+    it('caches resolved token and reuses on second call', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('fld_notes');
+      deps.tracker.getFileState.mockReturnValue(null);
+      deps.resolver.resolve.mockReturnValue('needs-sync');
+      mockAdapterGetBasePath.mockReturnValue('/vault');
+
+      await engine.ensureFolderPath('notes/a.md');
+      await engine.ensureFolderPath('notes/b.md');
+
+      // resolveFolderToken should only be called once (cached)
+      expect(mockResolveToken).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('onFileDelete', () => {
     it('deletes drive file and removes state', async () => {
       const mockFile = { path: 'note.md', extension: 'md' } as any;
@@ -238,6 +285,7 @@ describe('SyncEngine', () => {
         stat: { mtime: 3000 },
       } as any;
       deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_move' });
+      deps.bridge.findSubfolder.mockResolvedValue(null);
       deps.bridge.createFolder.mockResolvedValue('fld_archive');
 
       // @ts-ignore

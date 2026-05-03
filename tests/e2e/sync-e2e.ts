@@ -4,8 +4,10 @@ import * as obsidian from './obsidian-cli';
 import * as feishu from './feishu-verifier';
 
 const TEST_PREFIX = e2eConfig.testPrefix; // "raw/"
-const FOLDER_TOKEN = e2eConfig.folderToken;
+const FOLDER_PATH = e2eConfig.folderPath;
 const WAIT = e2eConfig.debounceWaitMs;
+
+let CACHED_ROOT_TOKEN: string | null = null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -64,6 +66,15 @@ async function waitForFileGone(folderToken: string, fileName: string, timeoutMs 
   );
 }
 
+/** Resolve the root folder token from the configured folder path */
+function getRootFolderToken(): string {
+  if (CACHED_ROOT_TOKEN) return CACHED_ROOT_TOKEN;
+  const token = feishu.resolveFolderPath(FOLDER_PATH);
+  if (!token) throw new Error(`Cannot resolve folder path: "${FOLDER_PATH}"`);
+  CACHED_ROOT_TOKEN = token;
+  return token;
+}
+
 /** Delete files from both Obsidian (CLI) and Drive */
 async function ensureCleanState(...paths: string[]): Promise<void> {
   // Clean Obsidian side via filesystem (more reliable than CLI delete)
@@ -85,15 +96,18 @@ async function ensureCleanState(...paths: string[]): Promise<void> {
 }
 
 function resolveFolderToken(vaultPath: string, verbose = true): string | null {
-  if (!vaultPath || vaultPath === TEST_PREFIX.replace(/\/$/, '')) {
-    return FOLDER_TOKEN;
+  const normalized = vaultPath.replace(/\/$/, '');
+  if (!normalized || normalized === TEST_PREFIX.replace(/\/$/, '')) {
+    return getRootFolderToken();
   }
-  const segments = vaultPath.split('/').filter(Boolean);
-  let currentToken: string | null = FOLDER_TOKEN;
+  const segments = normalized.split('/').filter(Boolean);
+  let currentToken: string | null = getRootFolderToken();
   for (const seg of segments) {
     if (!currentToken) return null;
-    const subfolderToken = feishu.findSubfolder(currentToken, seg);
-    if (!subfolderToken) return null;
+    let subfolderToken = feishu.findSubfolder(currentToken, seg);
+    if (!subfolderToken) {
+      subfolderToken = feishu.createFolder(currentToken, seg);
+    }
     currentToken = subfolderToken;
   }
   return currentToken;
@@ -111,14 +125,25 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (!FOLDER_TOKEN) {
-    console.error('FEISHU_FOLDER_TOKEN env var is required');
+  if (!FOLDER_PATH) {
+    console.error('FEISHU_FOLDER_PATH env var or folderPath config is required');
     process.exit(1);
   }
 
   console.log('=== E2E Sync Tests ===');
+  console.log(`Folder path: ${FOLDER_PATH}`);
   console.log(`Test prefix: ${TEST_PREFIX}`);
   console.log(`Wait time: ${WAIT}ms`);
+
+  // Resolve root folder token early to fail fast
+  let rootToken: string;
+  try {
+    rootToken = getRootFolderToken();
+    console.log(`Root token resolved: ${rootToken}`);
+  } catch (err: any) {
+    console.error(`Cannot resolve folder path "${FOLDER_PATH}": ${err.message}`);
+    process.exit(1);
+  }
 
   // Scenario 1: New file sync
   await runTest('S1: New file sync', async () => {
@@ -191,7 +216,7 @@ async function main(): Promise<void> {
     await ensureCleanState(FILE);
     obsidian.createFile({ name: 's5-file.md', content: '# Deep', path: 'deep/nested/' });
     await sleep(WAIT);
-    const deepFolder = feishu.findSubfolder(FOLDER_TOKEN, 'deep');
+    const deepFolder = feishu.findSubfolder(rootToken, 'deep');
     assert(deepFolder !== null, 'deep/ folder exists');
     const nestedFolder = feishu.findSubfolder(deepFolder!, 'nested');
     assert(nestedFolder !== null, 'nested/ folder exists');

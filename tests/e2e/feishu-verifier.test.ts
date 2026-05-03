@@ -31,7 +31,7 @@ vi.mock('path', () => ({
   join: (...args: string[]) => args.join('/'),
 }));
 
-import { listFiles, findFile, fileExists, getFileContent, deleteFileByToken, findSubfolder } from './feishu-verifier';
+import { listFiles, findFile, fileExists, getFileContent, deleteFileByToken, findSubfolder, resolveFolderPath } from './feishu-verifier';
 
 function driveListJson(files: Array<{ name: string; token: string; type: string }>) {
   return JSON.stringify({ data: { files } });
@@ -127,6 +127,41 @@ describe('feishu-verifier', () => {
       expect(cmd).toContain('--file-token "ftok_del"');
       expect(cmd).toContain('--type file');
       expect(cmd).toContain('--yes');
+    });
+  });
+
+  describe('resolveFolderPath', () => {
+    it('returns folder token for matching path', () => {
+      execSync.mockReturnValue(JSON.stringify({
+        data: {
+          results: [{
+            result_meta: { token: 'fld_root', doc_types: 'FOLDER', url: '/obsvault' },
+            title_highlighted: 'obsvault',
+          }],
+        },
+      }));
+      expect(resolveFolderPath('/obsvault')).toBe('fld_root');
+    });
+
+    it('filters non-FOLDER results', () => {
+      execSync.mockReturnValue(JSON.stringify({
+        data: {
+          results: [
+            { result_meta: { token: 'ftok_x', doc_types: 'FILE', url: '/obsvault' } },
+            { result_meta: { token: 'fld_root', doc_types: 'FOLDER', url: '/obsvault' } },
+          ],
+        },
+      }));
+      expect(resolveFolderPath('/obsvault')).toBe('fld_root');
+    });
+
+    it('returns null for empty results', () => {
+      execSync.mockReturnValue(JSON.stringify({ data: { results: [] } }));
+      expect(resolveFolderPath('/nonexistent')).toBeNull();
+    });
+
+    it('returns null for empty path', () => {
+      expect(resolveFolderPath('')).toBeNull();
     });
   });
 

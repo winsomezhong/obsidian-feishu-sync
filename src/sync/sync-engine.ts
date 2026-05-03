@@ -7,13 +7,16 @@ export class SyncEngine {
   private running = false;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private folderCache: Map<string, string> = new Map();
+  private cachedFolderToken: string | null = null;
+  private cachedFolderPath: string | null = null;
 
   constructor(
     private plugin: Plugin,
     private bridge: FeishuCliBridge,
     private tracker: SyncStatusTracker,
     private resolver: ConflictResolver,
-    private getFolderToken: () => string,
+    private getFolderPath: () => string,
+    private resolveFolderToken: (path: string) => Promise<string>,
   ) {}
 
   start(): void {
@@ -39,18 +42,35 @@ export class SyncEngine {
     this.debounceTimers.forEach(t => clearTimeout(t));
     this.debounceTimers.clear();
     this.folderCache.clear();
+    this.cachedFolderToken = null;
+    this.cachedFolderPath = null;
   }
 
   isRunning(): boolean {
     return this.running;
   }
 
+  private async getResolvedFolderToken(): Promise<string> {
+    const currentPath = this.getFolderPath();
+    if (!currentPath) return '';
+
+    if (this.cachedFolderToken !== null && this.cachedFolderPath === currentPath) {
+      return this.cachedFolderToken;
+    }
+
+    const token = await this.resolveFolderToken(currentPath);
+    this.cachedFolderToken = token;
+    this.cachedFolderPath = currentPath;
+    return token;
+  }
+
   async ensureFolderPath(filePath: string): Promise<string> {
+    const rootToken = await this.getResolvedFolderToken();
     const segments = filePath.split('/');
     segments.pop(); // remove filename
-    if (segments.length === 0) return this.getFolderToken();
+    if (segments.length === 0) return rootToken;
 
-    let currentParentToken = this.getFolderToken();
+    let currentParentToken = rootToken;
     let currentPath = '';
 
     for (const segment of segments) {
@@ -74,10 +94,15 @@ export class SyncEngine {
 
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
-    if (!this.getFolderToken()) {
-      console.warn('Feishu Sync: folder token not set, skipping', file.path);
+
+    const folderPath = this.getFolderPath();
+    if (!folderPath) {
+      console.warn('Feishu Sync: folder path not set, skipping', file.path);
       return;
     }
+
+    const folderToken = await this.getResolvedFolderToken();
+    if (!folderToken) return;
 
     const state = this.tracker.getFileState(file.path);
     const decision = this.resolver.resolve(file.stat.mtime, state);
@@ -95,10 +120,10 @@ export class SyncEngine {
       }
     }
 
-    const folderToken = await this.ensureFolderPath(file.path);
+    const targetFolderToken = await this.ensureFolderPath(file.path);
     const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
 
-    const result = await this.bridge.uploadFile(file.path, folderToken, file.name, vaultBasePath);
+    const result = await this.bridge.uploadFile(file.path, targetFolderToken, file.name, vaultBasePath);
     this.tracker.updateFileState(file.path, result.fileToken, file.stat.mtime);
   }
 

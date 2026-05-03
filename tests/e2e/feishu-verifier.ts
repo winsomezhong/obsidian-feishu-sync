@@ -56,6 +56,12 @@ export function getFileContent(fileToken: string): string {
   }
 }
 
+export function createFolder(parentToken: string, folderName: string): string {
+  const stdout = cmd(`drive +create-folder --folder-token "${parentToken}" --name "${folderName}"`);
+  const parsed = JSON.parse(stdout);
+  return parsed.data.folder_token;
+}
+
 export function deleteFileByToken(fileToken: string): void {
   cmd(`drive +delete --file-token "${fileToken}" --type file --yes`);
 }
@@ -64,4 +70,23 @@ export function findSubfolder(folderToken: string, folderName: string): string |
   const files = listFiles(folderToken);
   const found = files.find(f => f.name === folderName && f.type === 'folder');
   return found?.token ?? null;
+}
+
+export function resolveFolderPath(folderPath: string): string | null {
+  if (!folderPath) return null;
+  const escapedPath = folderPath.includes(' ') ? `"${folderPath}"` : folderPath;
+  const stdout = cmd(`drive +search --query ${escapedPath} --doc-types folder`);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const results = parsed?.data?.results;
+  if (!results || !Array.isArray(results) || results.length === 0) return null;
+  const folders = results.filter(
+    (r: any) => r?.result_meta?.doc_types === 'FOLDER',
+  );
+  if (folders.length === 0) return null;
+  return folders[0].result_meta?.token ?? null;
 }

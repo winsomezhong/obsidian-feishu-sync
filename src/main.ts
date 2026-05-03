@@ -8,6 +8,7 @@ import { SyncLog } from './sync/sync-log';
 import { SyncSettingsTab, DEFAULT_SETTINGS } from './ui/settings-tab';
 import { SyncStatusBar } from './ui/status-bar';
 import type { SyncPluginSettings } from './ui/settings-tab';
+import type { PreflightResult } from './types';
 
 export default class FeishuSyncPlugin extends Plugin {
   engine!: SyncEngine;
@@ -22,6 +23,14 @@ export default class FeishuSyncPlugin extends Plugin {
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
+    // Legacy migration: use old folderToken directly as resolved token
+    if ((this.settings as any).folderToken && !this.settings.folderPath && !this.settings.resolvedFolderToken) {
+      this.settings.resolvedFolderToken = (this.settings as any).folderToken;
+      this.settings.folderPath = '(migrated from folderToken)';
+      delete (this.settings as any).folderToken;
+      await this.saveData(this.settings);
+    }
+
     const dataDir = this.manifest.dir || (this.app.vault.configDir + '/plugins/obsidian-feishu-sync');
 
     this.syncLog = new SyncLog();
@@ -30,12 +39,41 @@ export default class FeishuSyncPlugin extends Plugin {
     this.tracker = new SyncStatusTracker(dataDir);
     const resolver = new ConflictResolver();
 
-    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, () => this.settings.folderToken);
+    this.engine = new SyncEngine(
+      this,
+      this.bridge,
+      this.tracker,
+      resolver,
+      () => this.settings.folderPath,
+      (path: string) => this.bridge.resolveFolderToken(path),
+    );
 
-    // Preflight
-    const preflightResult = await this.bridge.preflight();
+    // Preflight (now includes folder path resolution)
+    let preflightResult: PreflightResult;
+    try {
+      preflightResult = await this.bridge.preflight();
+    } catch (err) {
+      preflightResult = { success: false, error: `Preflight error: ${(err as Error).message}`, errorCode: 'PREFLIGHT_CRASHED' };
+    }
     if (!preflightResult.success) {
+      this.settings.folderResolutionError = preflightResult.error || 'Preflight failed';
+      await this.saveData(this.settings);
       new Notice(`Feishu Sync: ${preflightResult.error}`, 5000);
+    } else if (this.settings.folderPath) {
+      // Resolve folder path during preflight and cache result
+      try {
+        const resolvedToken = await this.bridge.resolveFolderToken(this.settings.folderPath);
+        this.settings.resolvedFolderToken = resolvedToken;
+        this.settings.folderResolutionError = '';
+        await this.saveData(this.settings);
+      } catch (err) {
+        this.settings.folderResolutionError = (err as Error).message;
+        await this.saveData(this.settings);
+        new Notice(
+          `Feishu Sync: Failed to resolve folder path "${this.settings.folderPath}": ${(err as Error).message}`,
+          5000,
+        );
+      }
     }
 
     // Settings tab
@@ -92,8 +130,8 @@ export default class FeishuSyncPlugin extends Plugin {
       },
     });
 
-    // Auto-start engine for event-driven sync
-    if (this.settings.syncOnSave) {
+    // Auto-start engine for event-driven sync (only if preflight passed)
+    if (this.settings.syncOnSave && preflightResult.success) {
       this.engine.start();
     }
   }

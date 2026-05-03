@@ -2,14 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from './settings-tab';
 
 describe('DEFAULT_SETTINGS', () => {
-  it('has folderToken and syncOnSave (no processorConfig)', () => {
-    expect(DEFAULT_SETTINGS).toHaveProperty('folderToken');
+  it('has folderPath, resolvedFolderToken, folderResolutionError, and syncOnSave', () => {
+    expect(DEFAULT_SETTINGS).toHaveProperty('folderPath');
+    expect(DEFAULT_SETTINGS).toHaveProperty('resolvedFolderToken');
+    expect(DEFAULT_SETTINGS).toHaveProperty('folderResolutionError');
     expect(DEFAULT_SETTINGS).toHaveProperty('syncOnSave');
-    expect(DEFAULT_SETTINGS).not.toHaveProperty('processorConfig');
   });
 
-  it('folderToken defaults to empty string', () => {
-    expect(DEFAULT_SETTINGS.folderToken).toBe('');
+  it('folderPath defaults to empty string', () => {
+    expect(DEFAULT_SETTINGS.folderPath).toBe('');
+  });
+
+  it('resolvedFolderToken defaults to empty string', () => {
+    expect(DEFAULT_SETTINGS.resolvedFolderToken).toBe('');
+  });
+
+  it('folderResolutionError defaults to empty string', () => {
+    expect(DEFAULT_SETTINGS.folderResolutionError).toBe('');
   });
 
   it('syncOnSave defaults to true', () => {
