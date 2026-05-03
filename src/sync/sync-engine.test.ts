@@ -239,6 +239,29 @@ describe('SyncEngine', () => {
       expect(result).toBe('fld_client');
       expect(deps.bridge.createFolder).not.toHaveBeenCalled();
     });
+
+    it('creates folder only once under concurrent calls', async () => {
+      // Use a deferred promise so both callers reach findSubfolder before either creates
+      let resolveFind: (v: string | null) => void = () => {};
+      const findPromise = new Promise<string | null>(r => { resolveFind = r; });
+
+      deps.bridge.findSubfolder.mockReturnValue(findPromise);
+      deps.bridge.createFolder.mockResolvedValue('fld_shared');
+
+      const results = Promise.all([
+        engine.ensureFolderPath('shared/a.md'),
+        engine.ensureFolderPath('shared/b.md'),
+      ]);
+
+      // Both callers are now waiting on findSubfolder. Resolve it.
+      resolveFind(null);
+      const [r1, r2] = await results;
+
+      expect(r1).toBe('fld_shared');
+      expect(r2).toBe('fld_shared');
+      expect(deps.bridge.createFolder).toHaveBeenCalledTimes(1);
+      expect(deps.bridge.createFolder).toHaveBeenCalledWith('root-token', 'shared');
+    });
   });
 
   describe('getResolvedFolderToken caching', () => {

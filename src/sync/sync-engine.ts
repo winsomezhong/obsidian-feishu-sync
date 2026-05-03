@@ -7,6 +7,7 @@ export class SyncEngine {
   private running = false;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private folderCache: Map<string, string> = new Map();
+  private folderLocks: Map<string, Promise<string>> = new Map();
   private cachedFolderToken: string | null = null;
   private cachedFolderPath: string | null = null;
 
@@ -42,6 +43,7 @@ export class SyncEngine {
     this.debounceTimers.forEach(t => clearTimeout(t));
     this.debounceTimers.clear();
     this.folderCache.clear();
+    this.folderLocks.clear();
     this.cachedFolderToken = null;
     this.cachedFolderPath = null;
   }
@@ -75,18 +77,31 @@ export class SyncEngine {
 
     for (const segment of segments) {
       currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+
+      // Fast path: cached from a previous resolution
       const cached = this.folderCache.get(currentPath);
       if (cached) {
         currentParentToken = cached;
         continue;
       }
-      const existing = await this.bridge.findSubfolder(currentParentToken, segment);
-      if (existing) {
-        currentParentToken = existing;
-      } else {
-        currentParentToken = await this.bridge.createFolder(currentParentToken, segment);
+
+      // If a concurrent call is already resolving this path, wait for it
+      const inflight = this.folderLocks.get(currentPath);
+      if (inflight) {
+        currentParentToken = await inflight;
+        continue;
       }
+
+      // Resolve (find-or-create) under a per-path lock to prevent duplicates
+      const lock = (async (): Promise<string> => {
+        const existing = await this.bridge.findSubfolder(currentParentToken, segment);
+        return existing || this.bridge.createFolder(currentParentToken, segment);
+      })();
+
+      this.folderLocks.set(currentPath, lock);
+      currentParentToken = await lock;
       this.folderCache.set(currentPath, currentParentToken);
+      this.folderLocks.delete(currentPath);
     }
 
     return currentParentToken;
