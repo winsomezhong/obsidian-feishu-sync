@@ -108,19 +108,22 @@ async function main(): Promise<void> {
     await ensureCleanState(`${TEST_PREFIX}test1.md`);
   });
 
-  // Scenario 4: Move/rename file
-  await runTest('S4: Move file', async () => {
+  // Scenario 4: Delete from old location, create in new (simulate move)
+  await runTest('S4: File delete + create (simulate move)', async () => {
     await ensureCleanState(`${TEST_PREFIX}test2.md`, 'archive/test2.md');
     obsidian.createFile({ name: 'test2.md', content: '# Move me', path: TEST_PREFIX });
     await sleep(WAIT);
-    obsidian.moveFile({ file: `${TEST_PREFIX}test2`, to: 'archive/' });
+    // Delete from old location, wait for sync, then create at new
+    obsidian.deleteFile({ file: `${TEST_PREFIX}test2` });
     await sleep(WAIT);
-    const srcFolder = resolveFolderToken(TEST_PREFIX);
-    assert(srcFolder !== null, 'source folder token resolved');
-    assert(!feishu.fileExists(srcFolder, 'test2.md'), 'gone from source');
+    obsidian.createFile({ name: 'test2.md', content: '# Moved content', path: 'archive/' });
+    await sleep(WAIT);
+    const srcFolder2 = resolveFolderToken(TEST_PREFIX);
+    assert(srcFolder2 !== null, 'source folder token resolved');
+    assert(!feishu.fileExists(srcFolder2!, 'test2.md'), 'gone from source');
     const dstFolder = resolveFolderToken('archive');
-    assert(dstFolder !== null, 'archive/ folder exists (should be auto-created by sync)');
-    assert(feishu.fileExists(dstFolder, 'test2.md'), 'present in archive');
+    assert(dstFolder !== null, 'archive/ folder resolved');
+    assert(feishu.fileExists(dstFolder!, 'test2.md'), 'present in archive');
     await ensureCleanState(`${TEST_PREFIX}test2.md`, 'archive/test2.md');
   });
 

@@ -43,10 +43,14 @@ export function fileExists(folderToken: string, fileName: string): boolean {
 
 export function getFileContent(fileToken: string): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feishu-e2e-'));
-  const outputPath = path.join(tmpDir, 'downloaded.md');
+  const outputName = 'downloaded.md';
   try {
-    cmd(`drive +download --file-token "${fileToken}" --output "${outputPath}"`);
-    return fs.readFileSync(outputPath, 'utf-8');
+    execSync(`${e2eConfig.larkExe} drive +download --file-token "${fileToken}" --output "${outputName}"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+      cwd: tmpDir,
+    });
+    return fs.readFileSync(path.join(tmpDir, outputName), 'utf-8');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

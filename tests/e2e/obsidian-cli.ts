@@ -14,7 +14,7 @@ export interface CreateParams {
 
 export function createFile(params: CreateParams): void {
   let args = `create name="${params.name}"`;
-  if (params.content) args += ` content="${params.content}"`;
+  if (params.content) args += ` content="${params.content.replace(/\n/g, '\\n')}"`;
   if (params.path) args += ` path="${params.path}"`;
   cmd(args);
 }
@@ -38,5 +38,5 @@ export function renameFile(params: { file: string; name: string }): void {
 }
 
 export function appendContent(params: { file: string; content: string }): void {
-  cmd(`append file="${params.file}" content="${params.content}"`);
+  cmd(`append file="${params.file}" content="${params.content.replace(/\n/g, '\\n')}"`);
 }
