@@ -204,30 +204,36 @@ export class FeishuCliBridge {
   }
 
   async resolveFolderToken(folderPath: string): Promise<string> {
-    const cmd = `${this.config.cliPath} drive +search --name ${this.escapeArg(folderPath)} --type folder`;
+    const cmd = `${this.config.cliPath} drive +search --query ${this.escapeArg(folderPath)} --doc-types folder`;
     return this.withRetry(async () => {
       try {
         const stdout = await this.executeCommand(cmd);
-        let data: any;
+        let parsed: any;
         try {
-          data = JSON.parse(stdout).data;
+          parsed = JSON.parse(stdout);
         } catch {
           throw new FolderNotFoundError(folderPath);
         }
-        if (!data || !data.folder_token) {
+        const results = parsed?.data?.results;
+        if (!results || !Array.isArray(results) || results.length === 0) {
           throw new FolderNotFoundError(folderPath);
         }
-        return data.folder_token;
+        // Filter to only FOLDER type results
+        const folders = results.filter(
+          (r: any) => r?.result_meta?.doc_types === 'FOLDER',
+        );
+        if (folders.length === 0) {
+          throw new FolderNotFoundError(folderPath);
+        }
+        if (folders.length > 1) {
+          const names = folders.map(
+            (f: any) => f.result_meta?.url || f.title_highlighted || '(unknown)',
+          );
+          throw new FolderAmbiguousError(folderPath, names);
+        }
+        return folders[0].result_meta.token;
       } catch (err) {
         if (err instanceof FolderNotFoundError || err instanceof FolderAmbiguousError) throw err;
-        if (err instanceof ApiError) {
-          if (err.code === 'FOLDER_NOT_FOUND' || err.statusCode === 404) {
-            throw new FolderNotFoundError(folderPath);
-          }
-          if (err.code === 'FOLDER_AMBIGUOUS' || err.statusCode === 409) {
-            throw new FolderAmbiguousError(folderPath, err.data?.matches || []);
-          }
-        }
         throw err;
       }
     });

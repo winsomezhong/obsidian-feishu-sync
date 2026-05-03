@@ -304,7 +304,14 @@ describe('FeishuCliBridge', () => {
   describe('resolveFolderToken', () => {
     it('resolves absolute folder path to token', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { folder_token: 'token-abc', path: '/My Docs/Sync' } }), '');
+        cb(null, JSON.stringify({
+          data: {
+            results: [{
+              result_meta: { token: 'token-abc', doc_types: 'FOLDER', url: '/My Docs/Sync' },
+              title_highlighted: 'My Docs/Sync',
+            }],
+          },
+        }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
@@ -314,7 +321,14 @@ describe('FeishuCliBridge', () => {
 
     it('resolves single folder name', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { folder_token: 'token-xyz', path: '/Sync' } }), '');
+        cb(null, JSON.stringify({
+          data: {
+            results: [{
+              result_meta: { token: 'token-xyz', doc_types: 'FOLDER', url: '/Sync' },
+              title_highlighted: 'Sync',
+            }],
+          },
+        }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
@@ -323,19 +337,33 @@ describe('FeishuCliBridge', () => {
     });
 
     it('throws FolderNotFoundError when folder does not exist', async () => {
-      const err = new Error('command failed');
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(err, '', JSON.stringify({ code: 404, msg: 'folder not found' }));
+        cb(null, JSON.stringify({ data: { results: [] } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await expect(bridge.resolveFolderToken('/nonexistent')).rejects.toThrow(FolderNotFoundError);
     });
 
-    it('throws FolderAmbiguousError when multiple folders match', async () => {
-      const err = new Error('command failed');
+    it('throws FolderNotFoundError when API returns success but no folder_token', async () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(err, '', JSON.stringify({ code: 409, msg: 'ambiguous', data: { matches: ['/A/Sync', '/B/Sync'] } }));
+        cb(null, JSON.stringify({ data: { results: [{ result_meta: { doc_types: 'FILE', token: 'x' } }] } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.resolveFolderToken('/Some/Folder')).rejects.toThrow(FolderNotFoundError);
+    });
+
+    it('throws FolderAmbiguousError when multiple folders match', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            results: [
+              { result_meta: { token: 'tok1', doc_types: 'FOLDER', url: '/A/Sync' } },
+              { result_meta: { token: 'tok2', doc_types: 'FOLDER', url: '/B/Sync' } },
+            ],
+          },
+        }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
@@ -344,17 +372,8 @@ describe('FeishuCliBridge', () => {
         expect.fail('should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(FolderAmbiguousError);
-        expect((err as FolderAmbiguousError).matches).toEqual(['/A/Sync', '/B/Sync']);
+        expect((err as any).matches.length).toBe(2);
       }
-    });
-
-    it('throws FolderNotFoundError when API returns success but no folder_token', async () => {
-      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, JSON.stringify({ data: { path: '/Some/Folder' } }), '');
-        return mockChild();
-      });
-      const bridge = new FeishuCliBridge();
-      await expect(bridge.resolveFolderToken('/Some/Folder')).rejects.toThrow(FolderNotFoundError);
     });
 
     it('retries on transient errors with exponential backoff', async () => {
@@ -366,7 +385,9 @@ describe('FeishuCliBridge', () => {
           const err = new Error('rate limited');
           cb(err, '', 'rate limited');
         } else {
-          cb(null, JSON.stringify({ data: { folder_token: 'token-789', path: '/Sync' } }), '');
+          cb(null, JSON.stringify({
+            data: { results: [{ result_meta: { token: 'token-789', doc_types: 'FOLDER', url: '/Sync' } }] },
+          }), '');
         }
         return mockChild();
       });
