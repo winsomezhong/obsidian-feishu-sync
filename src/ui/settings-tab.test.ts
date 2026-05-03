@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText, launchAuthLogin } from './settings-tab';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
+import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText, launchAuthLogin, SyncSettingsTab } from './settings-tab';
 import type { SyncPluginSettings } from './settings-tab';
 import { TRANSLATIONS } from '../i18n';
-import { Notice } from 'obsidian';
+import { App, Notice, PluginSettingTab } from 'obsidian';
 
 // Mock child_process
 vi.mock('child_process', () => ({
@@ -10,6 +10,125 @@ vi.mock('child_process', () => ({
 }));
 
 import { exec } from 'child_process';
+
+// ---- Minimal DOM environment for SyncSettingsTab tests ----
+let _elementIdCounter = 0;
+
+class MockEl {
+  tagName: string;
+  children: MockEl[] = [];
+  parentNode: MockEl | null = null;
+  _text = '';
+  _attrs: Record<string, string> = {};
+  _classes: string[] = [];
+  _listeners: Record<string, Array<(...args: any[]) => void>> = {};
+  _value = '';
+  _disabled = false;
+  style: Record<string, string> = {};
+  id = `el-${++_elementIdCounter}`;
+
+  constructor(tag: string) { this.tagName = tag.toUpperCase(); }
+
+  createEl<K extends keyof HTMLElementTagNameMap>(tag: K, options?: { cls?: string; text?: string; value?: string; href?: string }): any {
+    const el = new MockEl(tag as string);
+    if (options?.cls) { for (const c of options.cls.split(' ')) el._classes.push(c); }
+    if (options?.text) el._text = options.text;
+    if (options?.value) el._attrs['value'] = options.value;
+    if (options?.href) el._attrs['href'] = options.href;
+    this.children.push(el); el.parentNode = this;
+    return el;
+  }
+
+  createDiv(options?: { cls?: string; text?: string }): MockEl {
+    return this.createEl('div', options);
+  }
+
+  createSpan(options?: { cls?: string; text?: string }): MockEl {
+    return this.createEl('span', options);
+  }
+
+  setText(text: string): void { this._text = text; }
+  get textContent(): string { return this._text; }
+  set textContent(v: string) { this._text = v; }
+
+  addClass(cls: string): void { this._classes.push(cls); }
+
+  addEventListener(event: string, fn: (...args: any[]) => void): void {
+    if (!this._listeners[event]) this._listeners[event] = [];
+    this._listeners[event].push(fn);
+  }
+
+  click(): void {
+    const handlers = this._listeners['click'] || [];
+    for (const fn of handlers) fn();
+  }
+
+  set value(v: string) { this._value = v; }
+  get value(): string { return this._value; }
+  set disabled(v: boolean) { this._disabled = v; }
+  get disabled(): boolean { return this._disabled; }
+
+  querySelector(sel: string): MockEl | null {
+    // Support simple tag and class selectors
+    const isTag = /^[a-z]+$/.test(sel);
+    const isClass = sel.startsWith('.');
+    const clsName = isClass ? sel.slice(1) : '';
+    const tag = isTag ? sel.toUpperCase() : '';
+
+    for (const child of this.children) {
+      if (isTag && child.tagName === tag) return child;
+      if (isClass && child._classes.includes(clsName)) return child;
+      const found = child.querySelector(sel);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  querySelectorAll(sel: string): MockEl[] {
+    const results: MockEl[] = [];
+    const isTag = /^[a-z]+$/.test(sel);
+    const isClass = sel.startsWith('.');
+    const clsName = isClass ? sel.slice(1) : '';
+    const tag = isTag ? sel.toUpperCase() : '';
+
+    for (const child of this.children) {
+      if (isTag && child.tagName === tag) results.push(child);
+      if (isClass && child._classes.includes(clsName)) results.push(child);
+      results.push(...child.querySelectorAll(sel));
+    }
+    return results;
+  }
+
+  remove(): void {
+    if (this.parentNode) {
+      const idx = this.parentNode.children.indexOf(this);
+      if (idx >= 0) this.parentNode.children.splice(idx, 1);
+    }
+  }
+
+  empty(): void {
+    this.children = [];
+  }
+
+  getElementsByClassName(cls: string): MockEl[] {
+    const results: MockEl[] = [];
+    for (const child of this.children) {
+      if (child._classes.includes(cls)) results.push(child);
+      results.push(...child.getElementsByClassName(cls));
+    }
+    return results;
+  }
+}
+
+beforeAll(() => {
+  (globalThis as any).document = {
+    createElement(tag: string): MockEl {
+      return new MockEl(tag);
+    },
+  };
+  // Patch PluginSettingTab base class to use our mock document
+  // (it already uses document.createElement via the mock module)
+});
 
 describe('DEFAULT_SETTINGS', () => {
   it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, and language', () => {
@@ -264,5 +383,57 @@ describe('launchAuthLogin', () => {
       expect(() => cb(new Error('exec failed'))).not.toThrow();
     });
     launchAuthLogin();
+  });
+});
+
+describe('SyncSettingsTab - Authorize button', () => {
+  function createTab(overrides: Partial<SyncPluginSettings>): { tab: SyncSettingsTab; containerEl: HTMLElement } {
+    const app = new App();
+    const plugin = {
+      settings: { ...DEFAULT_SETTINGS, ...overrides },
+      saveData: vi.fn(),
+    };
+    const onSettingsChange = vi.fn();
+    const tab = new SyncSettingsTab(app, plugin, onSettingsChange);
+    tab.display();
+    return { tab, containerEl: (tab as any).containerEl };
+  }
+
+  it('shows Authorize button when status is auth_required', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'auth_required' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeTruthy();
+    expect(button!.textContent).toBe('Authorize');
+  });
+
+  it('does not show Authorize button when status is ok', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'ok' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeFalsy();
+  });
+
+  it('does not show Authorize button when status is undefined', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: undefined });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeFalsy();
+  });
+
+  it('does not show Authorize button when status is cli_not_found', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'cli_not_found' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeFalsy();
+  });
+
+  it('does not show Authorize button when status is auth_check_failed', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'auth_check_failed' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeFalsy();
+  });
+
+  it('Authorize button click calls launchAuthLogin', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'auth_required' });
+    const button = containerEl.querySelector('button')!;
+    button.click();
+    expect(exec).toHaveBeenCalled();
   });
 });

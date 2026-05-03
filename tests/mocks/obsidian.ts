@@ -87,16 +87,16 @@ export class Setting {
   }
   addText(cb: (text: any) => void): this {
     const textComponent = {
-      setPlaceholder: () => this,
-      setValue: () => this,
-      onChange: (fn: (value: string) => void) => { this._onChangeCallbacks.push(fn); },
+      setPlaceholder: () => textComponent,
+      setValue: () => textComponent,
+      onChange: (fn: (value: string) => void) => {},
     };
     cb(textComponent);
     return this;
   }
   addToggle(cb: (toggle: any) => void): this {
     const toggleComponent = {
-      setValue: () => this,
+      setValue: () => toggleComponent,
       onChange: (fn: (value: boolean) => void) => {},
     };
     cb(toggleComponent);
