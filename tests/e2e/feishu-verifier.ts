@@ -45,7 +45,7 @@ export function getFileContent(fileToken: string): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feishu-e2e-'));
   const outputPath = path.join(tmpDir, 'downloaded.md');
   try {
-    cmd(`drive +download --file-token "${fileToken}" --path "${outputPath}"`);
+    cmd(`drive +download --file-token "${fileToken}" --output "${outputPath}"`);
     return fs.readFileSync(outputPath, 'utf-8');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
