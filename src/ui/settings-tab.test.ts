@@ -29,7 +29,7 @@ class MockEl {
 
   constructor(tag: string) { this.tagName = tag.toUpperCase(); }
 
-  createEl<K extends keyof HTMLElementTagNameMap>(tag: K, options?: { cls?: string; text?: string; value?: string; href?: string }): any {
+  createEl(tag: string, options?: { cls?: string; text?: string; value?: string; href?: string }): any {
     const el = new MockEl(tag as string);
     if (options?.cls) { for (const c of options.cls.split(' ')) el._classes.push(c); }
     if (options?.text) el._text = options.text;
@@ -387,7 +387,7 @@ describe('launchAuthLogin', () => {
 });
 
 describe('SyncSettingsTab - Authorize button', () => {
-  function createTab(overrides: Partial<SyncPluginSettings>): { tab: SyncSettingsTab; containerEl: HTMLElement } {
+  function createTab(overrides: Partial<SyncPluginSettings>): { tab: SyncSettingsTab; containerEl: any } {
     const app = new App();
     const plugin = {
       settings: { ...DEFAULT_SETTINGS, ...overrides },
@@ -439,7 +439,7 @@ describe('SyncSettingsTab - Authorize button', () => {
 });
 
 describe('SyncSettingsTab - Language selector', () => {
-  function createTab(overrides: Partial<SyncPluginSettings>): { tab: SyncSettingsTab; containerEl: MockEl } {
+  function createTab(overrides: Partial<SyncPluginSettings>) {
     const app = new App();
     const plugin = {
       settings: { ...DEFAULT_SETTINGS, ...overrides },
@@ -449,12 +449,12 @@ describe('SyncSettingsTab - Language selector', () => {
     const tab = new SyncSettingsTab(app, plugin, onSettingsChange);
     (tab as any).containerEl = new MockEl('div');
     tab.display();
-    return { tab, containerEl: (tab as any).containerEl as MockEl };
+    return { tab, containerEl: (tab as any).containerEl };
   }
 
-  function findSettingNames(containerEl: MockEl): string[] {
+  function findSettingNames(containerEl: any): string[] {
     const items = containerEl.getElementsByClassName('setting-item-name');
-    return items.map(el => (el as unknown as MockEl)._text);
+    return items.map((el: any) => el._text);
   }
 
   it('renders language selector dropdown', () => {
@@ -463,7 +463,7 @@ describe('SyncSettingsTab - Language selector', () => {
     expect(selects.length).toBeGreaterThanOrEqual(1);
     const langSelect = selects[0];
     const options = langSelect.querySelectorAll('option');
-    const optionTexts = options.map(o => (o as unknown as MockEl)._text);
+    const optionTexts = options.map((o: any) => o._text);
     expect(optionTexts).toContain('English');
     expect(optionTexts).toContain('中文');
   });
