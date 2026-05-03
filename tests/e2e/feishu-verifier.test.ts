@@ -111,6 +111,9 @@ describe('feishu-verifier', () => {
       mockReadFileSync.mockReturnValue('# content');
       const content = getFileContent('ftok');
       expect(content).toBe('# content');
+      const cmd: string = execSync.mock.calls[0][0];
+      expect(cmd).toContain('drive +download');
+      expect(cmd).toContain('--file-token "ftok"');
     });
   });
 

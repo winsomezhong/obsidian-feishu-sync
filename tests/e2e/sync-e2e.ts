@@ -41,11 +41,9 @@ function resolveFolderToken(vaultPath: string): string | null {
   const segments = vaultPath.split('/').filter(Boolean);
   let currentToken: string | null = FOLDER_TOKEN;
   for (const seg of segments) {
-    const subfolderToken = feishu.findSubfolder(currentToken!, seg);
-    if (!subfolderToken) {
-      currentToken = null;
-      break;
-    }
+    if (!currentToken) return null;
+    const subfolderToken = feishu.findSubfolder(currentToken, seg);
+    if (!subfolderToken) return null;
     currentToken = subfolderToken;
   }
   return currentToken;
@@ -118,11 +116,11 @@ async function main(): Promise<void> {
     obsidian.moveFile({ file: `${TEST_PREFIX}test2`, to: 'archive/' });
     await sleep(WAIT);
     const srcFolder = resolveFolderToken(TEST_PREFIX);
+    assert(srcFolder !== null, 'source folder token resolved');
+    assert(!feishu.fileExists(srcFolder, 'test2.md'), 'gone from source');
     const dstFolder = resolveFolderToken('archive');
-    assert(!feishu.fileExists(srcFolder!, 'test2.md'), 'gone from source');
-    if (dstFolder) {
-      assert(feishu.fileExists(dstFolder, 'test2.md'), 'present in archive');
-    }
+    assert(dstFolder !== null, 'archive/ folder exists (should be auto-created by sync)');
+    assert(feishu.fileExists(dstFolder, 'test2.md'), 'present in archive');
     await ensureCleanState(`${TEST_PREFIX}test2.md`, 'archive/test2.md');
   });
 

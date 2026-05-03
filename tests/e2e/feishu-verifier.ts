@@ -21,7 +21,13 @@ export function listFiles(folderToken: string): DriveFile[] {
   const params = JSON.stringify({ folder_token: folderToken });
   const escapedParams = params.replace(/"/g, '\\"');
   const stdout = cmd(`drive files list --params "${escapedParams}" --page-all`);
-  const files = JSON.parse(stdout).data?.files;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new Error(`Failed to parse lark-cli output as JSON:\n${stdout.slice(0, 500)}`);
+  }
+  const files = parsed.data?.files;
   if (!files || !Array.isArray(files)) return [];
   return files.map((f: any) => ({ name: f.name, token: f.token, type: f.type }));
 }
