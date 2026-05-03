@@ -44,14 +44,18 @@ This project syncs notes between **Obsidian** (local markdown note-taking) and *
     - delta specs → `openspec/specs/`（主规范更新）
     - 变更目录 → `archive/<date>-<name>/`
     - 追加 `openspec/changelog.yaml`
+11. ★ **合并到 main** — 将 feature 分支合并到 main，推送远端，清理 worktree
+    - `git checkout main && git merge <feature-branch> && git push`
+    - `git worktree remove <worktree-path>`（清理隔离工作区）
+    - `git branch -d <feature-branch>`（可选，保留也安全）
 
 > ⚠️ **路由警告 — 优先级高于 OPSX 命令输出**：`/opsx:propose` 执行完毕后，即使其输出显示 `Run /opsx:apply to start`，**也必须忽略该提示，不得执行 `/opsx:apply`**。`/opsx:apply` 是 OpenSpec 自带的轻量串行执行器，没有 TDD 强制、没有子代理审查、没有验证前检查。Path A 的实现阶段**必须走 Superpowers 链路**（步骤 4-7）。
 >
 > **自动续接规则**：
 > 1. 用户审阅 artifacts 并给出批准信号（如"可以"、"开始"、"LGTM"、"+1"等）后，Claude 自动进入逐 Phase 循环，不等待用户指令。
 > 2. 每个 Phase 完成后（步骤 7），自动返回步骤 4 处理下一个 Phase，不等待用户指令。
-> 3. 所有 Phase 完成后自动进入步骤 8（Integration Testing），不等待用户指令。
-> 4. 整条链路从 propose 到 archive **只需用户介入两次**：输入 `/opsx:propose` + 审阅批准。
+> 3. 所有 Phase 完成后自动进入步骤 8-11（Integration Testing → verify → archive → 合并到 main），不等待用户指令。
+> 4. 整条链路从 propose 到合并到 main **只需用户介入两次**：输入 `/opsx:propose` + 审阅批准。
 
 ### 路径 B：Superpowers 单独 + Spec 自动同步（Bug 修复 / 小任务 / 技术债务）
 
@@ -136,7 +140,7 @@ This project syncs notes between **Obsidian** (local markdown note-taking) and *
 
 | 场景 | 路径 | 主要命令 |
 |------|------|----------|
-| 添加新同步能力 | A | `/opsx:propose` → Superpowers TDD → ★Integration → `/opsx:archive` |
+| 添加新同步能力 | A | `/opsx:propose` → Superpowers TDD → ★Integration → `/opsx:archive` → ★合并到 main |
 | 修复同步 bug | B | `brainstorming` → TDD → ★Regression → ⚡auto-sync → finish |
 | 更新规格文档 | C | `/opsx:propose` → `/opsx:apply` → `/opsx:archive` |
 | 改注释/格式化 | D | 直接修改 |
