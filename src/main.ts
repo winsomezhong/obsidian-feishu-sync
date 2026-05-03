@@ -22,6 +22,12 @@ export default class FeishuSyncPlugin extends Plugin {
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
+    // Legacy migration: copy old folderToken to folderPath
+    if ((this.settings as any).folderToken && !this.settings.folderPath) {
+      this.settings.folderPath = (this.settings as any).folderToken;
+      await this.saveData(this.settings);
+    }
+
     const dataDir = this.manifest.dir || (this.app.vault.configDir + '/plugins/obsidian-feishu-sync');
 
     this.syncLog = new SyncLog();
@@ -31,12 +37,35 @@ export default class FeishuSyncPlugin extends Plugin {
     const resolver = new ConflictResolver();
     const preprocessor = new Preprocessor(this.settings.processorConfig);
 
-    this.engine = new SyncEngine(this, this.bridge, this.tracker, resolver, preprocessor, () => this.settings.folderToken);
+    this.engine = new SyncEngine(
+      this,
+      this.bridge,
+      this.tracker,
+      resolver,
+      preprocessor,
+      () => this.settings.folderPath,
+      (path: string) => this.bridge.resolveFolderToken(path),
+    );
 
-    // Preflight
+    // Preflight (now includes folder path resolution)
     const preflightResult = await this.bridge.preflight();
     if (!preflightResult.success) {
       new Notice(`Feishu Sync: ${preflightResult.error}`, 5000);
+    } else if (this.settings.folderPath) {
+      // Resolve folder path during preflight and cache result
+      try {
+        const resolvedToken = await this.bridge.resolveFolderToken(this.settings.folderPath);
+        this.settings.resolvedFolderToken = resolvedToken;
+        this.settings.folderResolutionError = '';
+        await this.saveData(this.settings);
+      } catch (err) {
+        this.settings.folderResolutionError = (err as Error).message;
+        await this.saveData(this.settings);
+        new Notice(
+          `Feishu Sync: Failed to resolve folder path "${this.settings.folderPath}": ${(err as Error).message}`,
+          5000,
+        );
+      }
     }
 
     // Settings tab
