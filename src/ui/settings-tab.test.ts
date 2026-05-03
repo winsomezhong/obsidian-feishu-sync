@@ -437,3 +437,52 @@ describe('SyncSettingsTab - Authorize button', () => {
     expect(exec).toHaveBeenCalled();
   });
 });
+
+describe('SyncSettingsTab - Language selector', () => {
+  function createTab(overrides: Partial<SyncPluginSettings>): { tab: SyncSettingsTab; containerEl: MockEl } {
+    const app = new App();
+    const plugin = {
+      settings: { ...DEFAULT_SETTINGS, ...overrides },
+      saveData: vi.fn(),
+    };
+    const onSettingsChange = vi.fn();
+    const tab = new SyncSettingsTab(app, plugin, onSettingsChange);
+    (tab as any).containerEl = new MockEl('div');
+    tab.display();
+    return { tab, containerEl: (tab as any).containerEl as MockEl };
+  }
+
+  function findSettingNames(containerEl: MockEl): string[] {
+    const items = containerEl.getElementsByClassName('setting-item-name');
+    return items.map(el => (el as unknown as MockEl)._text);
+  }
+
+  it('renders language selector dropdown', () => {
+    const { containerEl } = createTab({});
+    const selects = containerEl.querySelectorAll('select');
+    expect(selects.length).toBeGreaterThanOrEqual(1);
+    const langSelect = selects[0];
+    const options = langSelect.querySelectorAll('option');
+    const optionTexts = options.map(o => (o as unknown as MockEl)._text);
+    expect(optionTexts).toContain('English');
+    expect(optionTexts).toContain('中文');
+  });
+
+  it('language selector appears before folder path setting', () => {
+    const { containerEl } = createTab({});
+    const names = findSettingNames(containerEl);
+    const langIdx = names.findIndex(n => n === 'Language');
+    const folderIdx = names.findIndex(n => n === 'Folder path');
+    expect(langIdx).toBeGreaterThanOrEqual(0);
+    expect(folderIdx).toBeGreaterThan(langIdx);
+  });
+
+  it('language selector appears after auth status setting', () => {
+    const { containerEl } = createTab({});
+    const names = findSettingNames(containerEl);
+    const authIdx = names.findIndex(n => n === 'Feishu CLI auth status');
+    const langIdx = names.findIndex(n => n === 'Language');
+    expect(authIdx).toBeGreaterThanOrEqual(0);
+    expect(langIdx).toBeGreaterThan(authIdx);
+  });
+});

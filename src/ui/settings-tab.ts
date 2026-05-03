@@ -178,6 +178,21 @@ export class SyncSettingsTab extends PluginSettingTab {
         });
     }
 
+    // Language selector: placed after Refresh button, before Folder path
+    new Setting(containerEl)
+      .setName(t('language', lang))
+      .setDesc(t('languageDesc', lang))
+      .addDropdown(dropdown => dropdown
+        .addOption('en', 'English')
+        .addOption('zh', '中文')
+        .setValue(this.plugin.settings?.language || 'en')
+        .onChange(async value => {
+          this.plugin.settings.language = value as Locale;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+          this.display();
+        }));
+
     const folderPathSetting = new Setting(containerEl)
       .setName(t('folderPath', lang))
       .setDesc(t('folderPathDesc', lang))
@@ -205,20 +220,6 @@ export class SyncSettingsTab extends PluginSettingTab {
           this.plugin.settings.syncOnSave = value;
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
-        }));
-
-    new Setting(containerEl)
-      .setName(t('language', lang))
-      .setDesc(t('languageDesc', lang))
-      .addDropdown(dropdown => dropdown
-        .addOption('en', 'English')
-        .addOption('zh', '中文')
-        .setValue(this.plugin.settings?.language || 'en')
-        .onChange(async value => {
-          this.plugin.settings.language = value as Locale;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-          this.display();
         }));
   }
 
