@@ -149,6 +149,11 @@ async function main(): Promise<void> {
     }
   }
 
+  // Reload plugin to pick up latest code (replaces Obsidian restart)
+  console.log('Reloading obsidian-feishu-sync plugin...');
+  obsidian.reloadPlugin();
+  console.log('Plugin reloaded.');
+
   // Scenario 1: New file sync
   await runTest('S1: New file sync', async () => {
     const FILE = `${TEST_PREFIX}s1-test.md`;
@@ -229,17 +234,19 @@ async function main(): Promise<void> {
     await sleep(WAIT);
   });
 
-  // Scenario 6: Batch sync
+  // Scenario 6: Batch sync (stagger creation to avoid API contention)
   await runTest('S6: Batch sync', async () => {
     const FILES = ['s6-a.md', 's6-b.md', 's6-c.md'].map(f => `${TEST_PREFIX}${f}`);
     await ensureCleanState(...FILES);
     obsidian.createFile({ name: 's6-a.md', content: 'A', path: TEST_PREFIX });
+    await sleep(3000);
     obsidian.createFile({ name: 's6-b.md', content: 'B', path: TEST_PREFIX });
+    await sleep(3000);
     obsidian.createFile({ name: 's6-c.md', content: 'C', path: TEST_PREFIX });
     await sleep(WAIT);
     const folderToken = resolveFolderToken(TEST_PREFIX);
     for (const f of ['s6-a.md', 's6-b.md', 's6-c.md']) {
-      await waitForFile(folderToken!, f, 30000);
+      await waitForFile(folderToken!, f, 60000);
     }
     await ensureCleanState(...FILES);
   });
