@@ -62,12 +62,80 @@ export class PluginSettingTab {
 }
 
 export class Setting {
-  constructor(containerEl: HTMLElement) {}
-  setName(name: string): this { return this; }
-  setDesc(desc: string): this { return this; }
-  addText(cb: (text: any) => void): this { cb({ setPlaceholder: () => this, setValue: () => this, onChange: () => {} }); return this; }
-  addToggle(cb: (toggle: any) => void): this { cb({ setValue: () => this, onChange: () => {} }); return this; }
-  addDropdown(cb: (dropdown: any) => void): this { cb({ addOption: () => this, setValue: () => this, onChange: () => {} }); return this; }
+  containerEl: HTMLElement;
+  settingEl: HTMLElement;
+  nameEl: HTMLElement;
+  descEl: HTMLElement;
+  controlEl: HTMLElement;
+  private _onChangeCallbacks: Array<(value: string) => void> = [];
+
+  constructor(containerEl: HTMLElement) {
+    this.containerEl = containerEl;
+    this.settingEl = containerEl.createDiv({ cls: 'setting-item' });
+    const infoEl = this.settingEl.createDiv({ cls: 'setting-item-info' });
+    this.nameEl = infoEl.createDiv({ cls: 'setting-item-name' });
+    this.descEl = infoEl.createDiv({ cls: 'setting-item-desc' });
+    this.controlEl = this.settingEl.createDiv({ cls: 'setting-item-controls' });
+  }
+  setName(name: string): this {
+    this.nameEl.setText(name);
+    return this;
+  }
+  setDesc(desc: string): this {
+    this.descEl.setText(desc);
+    return this;
+  }
+  addText(cb: (text: any) => void): this {
+    const textComponent = {
+      setPlaceholder: () => this,
+      setValue: () => this,
+      onChange: (fn: (value: string) => void) => { this._onChangeCallbacks.push(fn); },
+    };
+    cb(textComponent);
+    return this;
+  }
+  addToggle(cb: (toggle: any) => void): this {
+    const toggleComponent = {
+      setValue: () => this,
+      onChange: (fn: (value: boolean) => void) => {},
+    };
+    cb(toggleComponent);
+    return this;
+  }
+  addDropdown(cb: (dropdown: any) => void): this {
+    const selectEl = this.controlEl.createEl('select');
+    const dropdownComponent = {
+      addOption: (value: string, display: string) => {
+        selectEl.createEl('option', { value, text: display });
+        return dropdownComponent;
+      },
+      setValue: (val: string) => {
+        selectEl.value = val;
+        return dropdownComponent;
+      },
+      onChange: (fn: (value: string) => void) => {
+        selectEl.addEventListener('change', () => fn(selectEl.value));
+        return dropdownComponent;
+      },
+    };
+    cb(dropdownComponent);
+    return this;
+  }
+  addButton(cb: (button: any) => void): this {
+    const buttonEl = this.controlEl.createEl('button');
+    const buttonComponent = {
+      setButtonText: (text: string) => { buttonEl.setText(text); return buttonComponent; },
+      setCta: () => { buttonEl.addClass('mod-cta'); return buttonComponent; },
+      setDisabled: (disabled: boolean) => { (buttonEl as any).disabled = disabled; return buttonComponent; },
+      onClick: (fn: () => void) => {
+        buttonEl.addEventListener('click', fn);
+        return buttonComponent;
+      },
+      buttonEl,
+    };
+    cb(buttonComponent);
+    return this;
+  }
 }
 
 export class Notice {
