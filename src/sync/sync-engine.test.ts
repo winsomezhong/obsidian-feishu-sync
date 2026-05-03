@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock obsidian module before importing SyncEngine
 vi.mock('obsidian', () => ({
   Plugin: class MockPlugin {},
   TFile: class MockTFile {},
@@ -44,12 +43,22 @@ describe('SyncEngine', () => {
   let engine: SyncEngine;
   let plugin: any;
   let deps: ReturnType<typeof createMockDeps>;
+  let resolveFolderToken: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     plugin = createMockPlugin();
     deps = createMockDeps();
-    engine = new SyncEngine(plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor, () => 'test-token');
+    resolveFolderToken = vi.fn();
+    engine = new SyncEngine(
+      plugin,
+      deps.bridge,
+      deps.tracker,
+      deps.resolver,
+      deps.preprocessor,
+      () => '/My Docs/Sync',
+      resolveFolderToken,
+    );
   });
 
   it('start() registers event listeners', () => {
@@ -79,6 +88,7 @@ describe('SyncEngine', () => {
   });
 
   it('syncFile creates new doc when no state exists', async () => {
+    resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
     deps.tracker.getFileState.mockReturnValue(null);
     deps.resolver.resolve.mockReturnValue('needs-sync');
@@ -87,11 +97,13 @@ describe('SyncEngine', () => {
 
     await engine.syncFile(mockFile);
 
-    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'test-token');
+    expect(resolveFolderToken).toHaveBeenCalledWith('/My Docs/Sync');
+    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'resolved-token-123');
     expect(deps.tracker.updateFileState).toHaveBeenCalledWith('note.md', 'doc1', 1000);
   });
 
   it('syncFile updates existing doc when state exists', async () => {
+    resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 2000 } } as any;
     deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
     deps.resolver.resolve.mockReturnValue('needs-sync');
@@ -104,6 +116,7 @@ describe('SyncEngine', () => {
   });
 
   it('syncFile creates new doc when state exists but feishuDocToken is empty', async () => {
+    resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
     deps.tracker.getFileState.mockReturnValue({ feishuDocToken: '' } as any);
     deps.resolver.resolve.mockReturnValue('needs-sync');
@@ -112,11 +125,12 @@ describe('SyncEngine', () => {
 
     await engine.syncFile(mockFile);
 
-    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'test-token');
+    expect(deps.bridge.createDocument).toHaveBeenCalledWith('note', '# note\n\nprocessed', 'resolved-token-123');
     expect(deps.bridge.updateDocument).not.toHaveBeenCalled();
   });
 
   it('syncFile skips file when resolver returns skip', async () => {
+    resolveFolderToken.mockResolvedValue('resolved-token-123');
     const mockFile = { path: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
     deps.tracker.getFileState.mockReturnValue({ feishuDocToken: 'doc1' } as any);
     deps.resolver.resolve.mockReturnValue('skip');
@@ -136,7 +150,63 @@ describe('SyncEngine', () => {
     expect(deps.bridge.updateDocument).not.toHaveBeenCalled();
   });
 
+  it('syncFile skips when folder path is empty', async () => {
+    const emptyPathEngine = new SyncEngine(
+      plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor,
+      () => '', resolveFolderToken,
+    );
+    const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await emptyPathEngine.syncFile(mockFile);
+
+    expect(consoleWarn).toHaveBeenCalled();
+    expect(resolveFolderToken).not.toHaveBeenCalled();
+    expect(deps.bridge.createDocument).not.toHaveBeenCalled();
+    consoleWarn.mockRestore();
+  });
+
+  it('caches resolved token and reuses on subsequent syncs', async () => {
+    resolveFolderToken.mockResolvedValue('token-first-call');
+    const mockFile = { path: 'a.md', name: 'a.md', extension: 'md', stat: { mtime: 1000 } } as any;
+    deps.tracker.getFileState.mockReturnValue(null);
+    deps.resolver.resolve.mockReturnValue('needs-sync');
+    mockVaultRead.mockResolvedValue('# A');
+    deps.bridge.createDocument.mockResolvedValue({ documentId: 'docA', url: '' });
+
+    // First sync — resolves
+    await engine.syncFile(mockFile);
+    expect(resolveFolderToken).toHaveBeenCalledTimes(1);
+
+    // Second sync — uses cache
+    await engine.syncFile(mockFile);
+    expect(resolveFolderToken).toHaveBeenCalledTimes(1); // still 1
+  });
+
+  it('re-resolves when folderPath changes', async () => {
+    resolveFolderToken.mockResolvedValue('token-new');
+    const mockFile = { path: 'a.md', name: 'a.md', extension: 'md', stat: { mtime: 1000 } } as any;
+    deps.tracker.getFileState.mockReturnValue(null);
+    deps.resolver.resolve.mockReturnValue('needs-sync');
+    mockVaultRead.mockResolvedValue('# A');
+    deps.bridge.createDocument.mockResolvedValue({ documentId: 'docA', url: '' });
+
+    // First sync with path /A
+    await engine.syncFile(mockFile);
+    expect(resolveFolderToken).toHaveBeenCalledWith('/My Docs/Sync');
+
+    // Reconstitute engine with different path
+    const resolve2 = vi.fn().mockResolvedValue('token-different');
+    const engine2 = new SyncEngine(
+      plugin, deps.bridge, deps.tracker, deps.resolver, deps.preprocessor,
+      () => '/Different/Path', resolve2,
+    );
+    await engine2.syncFile(mockFile);
+    expect(resolve2).toHaveBeenCalledWith('/Different/Path');
+  });
+
   it('syncAll iterates all markdown files', async () => {
+    resolveFolderToken.mockResolvedValue('token');
     const files = [{ path: 'a.md', extension: 'md' }, { path: 'b.md', extension: 'md' }] as any[];
     mockGetMarkdownFiles.mockReturnValue(files);
     vi.spyOn(engine, 'syncFile').mockResolvedValue();
@@ -147,6 +217,7 @@ describe('SyncEngine', () => {
   });
 
   it('syncAll collects errors without throwing', async () => {
+    resolveFolderToken.mockResolvedValue('token');
     const files = [{ path: 'a.md', extension: 'md' }] as any[];
     mockGetMarkdownFiles.mockReturnValue(files);
     vi.spyOn(engine, 'syncFile').mockRejectedValue(new Error('test error'));
@@ -160,6 +231,7 @@ describe('SyncEngine', () => {
 
   it('onFileChange debounces rapid modifications', async () => {
     vi.useFakeTimers();
+    resolveFolderToken.mockResolvedValue('token');
     engine.start();
 
     const mockFile = { path: 'note.md', name: 'note.md', extension: 'md', stat: { mtime: 1000 } } as any;
@@ -168,13 +240,11 @@ describe('SyncEngine', () => {
     mockVaultRead.mockResolvedValue('# Hello');
     deps.bridge.createDocument.mockResolvedValue({ documentId: 'doc1', url: '' });
 
-    // Trigger the file change handler manually
     // @ts-ignore - accessing private method for testing
     engine.onFileChange(mockFile);
     // @ts-ignore - accessing private method for testing
     engine.onFileChange(mockFile);
 
-    // Only one timer should exist for this path
     expect(deps.bridge.createDocument).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(2000);

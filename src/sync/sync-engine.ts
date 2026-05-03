@@ -7,6 +7,8 @@ import { Preprocessor } from '../converter/preprocessor';
 export class SyncEngine {
   private running = false;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private cachedFolderToken: string | null = null;
+  private cachedFolderPath: string | null = null;
 
   constructor(
     private plugin: Plugin,
@@ -14,7 +16,8 @@ export class SyncEngine {
     private tracker: SyncStatusTracker,
     private resolver: ConflictResolver,
     private preprocessor: Preprocessor,
-    private getFolderToken: () => string,
+    private getFolderPath: () => string,
+    private resolveFolderToken: (path: string) => Promise<string>,
   ) {}
 
   start(): void {
@@ -45,12 +48,31 @@ export class SyncEngine {
     return this.running;
   }
 
+  private async getResolvedFolderToken(): Promise<string> {
+    const currentPath = this.getFolderPath();
+    if (!currentPath) return '';
+
+    if (this.cachedFolderToken !== null && this.cachedFolderPath === currentPath) {
+      return this.cachedFolderToken;
+    }
+
+    const token = await this.resolveFolderToken(currentPath);
+    this.cachedFolderToken = token;
+    this.cachedFolderPath = currentPath;
+    return token;
+  }
+
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
-    if (!this.getFolderToken()) {
-      console.warn('Feishu Sync: folder token not set, skipping', file.path);
+
+    const folderPath = this.getFolderPath();
+    if (!folderPath) {
+      console.warn('Feishu Sync: folder path not set, skipping', file.path);
       return;
     }
+
+    const folderToken = await this.getResolvedFolderToken();
+    if (!folderToken) return;
 
     const state = this.tracker.getFileState(file.path);
     const decision = this.resolver.resolve(file.stat.mtime, state);
@@ -62,7 +84,7 @@ export class SyncEngine {
     if (!state || !state.feishuDocToken) {
       const title = file.name.replace(/\.md$/, '');
       const fullContent = `# ${title}\n\n${processedContent}`;
-      const result = await this.bridge.createDocument(title, fullContent, this.getFolderToken());
+      const result = await this.bridge.createDocument(title, fullContent, folderToken);
       this.tracker.updateFileState(file.path, result.documentId, file.stat.mtime);
     } else {
       const fullContent = `# ${file.name.replace(/\.md$/, '')}\n\n${processedContent}`;
@@ -128,7 +150,6 @@ export class SyncEngine {
     if (state) {
       this.tracker.removeFileState(oldPath);
       this.tracker.updateFileState(file.path, state.feishuDocToken, file.stat.mtime);
-      // Update Feishu document title to reflect new filename
       try {
         const title = file.name.replace(/\.md$/, '');
         const content = await this.plugin.app.vault.read(file);
