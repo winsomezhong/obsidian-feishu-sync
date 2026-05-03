@@ -139,7 +139,7 @@ export class FeishuCliBridge {
         return await fn();
       } catch (err) {
         lastError = err as Error;
-        if (err instanceof CliNotFoundError || err instanceof AuthRequiredError) throw err;
+        if (err instanceof CliNotFoundError || err instanceof AuthRequiredError || err instanceof FolderNotFoundError || err instanceof FolderAmbiguousError) throw err;
         if (attempt < delays.length) {
           await new Promise(r => setTimeout(r, delays[attempt]));
         }
@@ -200,5 +200,35 @@ export class FeishuCliBridge {
   async fetchDocument(docToken: string): Promise<string> {
     const cmd = `${this.config.cliPath} docs +fetch --api-version v2 --doc ${docToken} --doc-format markdown`;
     return this.withRetry(() => this.executeCommand(cmd));
+  }
+
+  async resolveFolderToken(folderPath: string): Promise<string> {
+    const cmd = `${this.config.cliPath} drive +search --name ${this.escapeArg(folderPath)} --type folder`;
+    return this.withRetry(async () => {
+      try {
+        const stdout = await this.executeCommand(cmd);
+        const data = JSON.parse(stdout).data;
+        if (!data || !data.folder_token) {
+          throw new FolderNotFoundError(folderPath);
+        }
+        return data.folder_token;
+      } catch (err) {
+        if (err instanceof FolderNotFoundError || err instanceof FolderAmbiguousError) throw err;
+        if (err instanceof ApiError) {
+          if (err.code === 'FOLDER_NOT_FOUND' || err.statusCode === 404) {
+            throw new FolderNotFoundError(folderPath);
+          }
+          if (err.code === 'FOLDER_AMBIGUOUS' || err.statusCode === 409) {
+            throw new FolderAmbiguousError(folderPath, []);
+          }
+        }
+        throw err;
+      }
+    });
+  }
+
+  private escapeArg(arg: string): string {
+    if (/^[a-zA-Z0-9_\-/.]+$/.test(arg)) return arg;
+    return `"${arg.replace(/"/g, '\\"')}"`;
   }
 }

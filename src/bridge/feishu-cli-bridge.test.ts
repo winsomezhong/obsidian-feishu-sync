@@ -301,6 +301,71 @@ describe('FeishuCliBridge', () => {
     });
   });
 
+  describe('resolveFolderToken', () => {
+    it('resolves absolute folder path to token', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { folder_token: 'token-abc', path: '/My Docs/Sync' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const token = await bridge.resolveFolderToken('/My Docs/Sync');
+      expect(token).toBe('token-abc');
+    });
+
+    it('resolves single folder name', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { folder_token: 'token-xyz', path: '/Sync' } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const token = await bridge.resolveFolderToken('Sync');
+      expect(token).toBe('token-xyz');
+    });
+
+    it('throws FolderNotFoundError when folder does not exist', async () => {
+      const err = new Error('command failed');
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', JSON.stringify({ code: 404, msg: 'folder not found' }));
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.resolveFolderToken('/nonexistent')).rejects.toThrow(FolderNotFoundError);
+    });
+
+    it('throws FolderAmbiguousError when multiple folders match', async () => {
+      const err = new Error('command failed');
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', JSON.stringify({ code: 409, msg: 'ambiguous', data: { matches: ['/A/Sync', '/B/Sync'] } }));
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.resolveFolderToken('Sync')).rejects.toThrow(FolderAmbiguousError);
+    });
+
+    it('retries on transient errors with exponential backoff', async () => {
+      vi.useFakeTimers();
+      let attempts = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        attempts++;
+        if (attempts < 3) {
+          const err = new Error('rate limited');
+          cb(err, '', 'rate limited');
+        } else {
+          cb(null, JSON.stringify({ data: { folder_token: 'token-789', path: '/Sync' } }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const resultPromise = bridge.resolveFolderToken('Sync');
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(10000);
+      const token = await resultPromise;
+      expect(token).toBe('token-789');
+      expect(attempts).toBe(3);
+      vi.useRealTimers();
+    });
+  });
+
   describe('temp file content passing', () => {
     it('replaces @- with temp file path for createDocument', async () => {
       let usedCommand = '';
