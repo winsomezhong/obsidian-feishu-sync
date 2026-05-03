@@ -97,17 +97,13 @@ async function ensureCleanState(...paths: string[]): Promise<void> {
 
 function resolveFolderToken(vaultPath: string, verbose = true): string | null {
   const normalized = vaultPath.replace(/\/$/, '');
-  if (!normalized || normalized === TEST_PREFIX.replace(/\/$/, '')) {
-    return getRootFolderToken();
-  }
+  if (!normalized) return getRootFolderToken();
   const segments = normalized.split('/').filter(Boolean);
   let currentToken: string | null = getRootFolderToken();
   for (const seg of segments) {
     if (!currentToken) return null;
-    let subfolderToken = feishu.findSubfolder(currentToken, seg);
-    if (!subfolderToken) {
-      subfolderToken = feishu.createFolder(currentToken, seg);
-    }
+    const subfolderToken = feishu.findSubfolder(currentToken, seg);
+    if (!subfolderToken) return null;
     currentToken = subfolderToken;
   }
   return currentToken;
@@ -143,6 +139,14 @@ async function main(): Promise<void> {
   } catch (err: any) {
     console.error(`Cannot resolve folder path "${FOLDER_PATH}": ${err.message}`);
     process.exit(1);
+  }
+
+  // Pre-create test folders so resolution works for all scenarios
+  for (const folder of ['_e2etest', 'archive']) {
+    if (!feishu.findSubfolder(rootToken, folder)) {
+      const created = feishu.createFolder(rootToken, folder);
+      console.log(`Created test folder "${folder}": ${created}`);
+    }
   }
 
   // Scenario 1: New file sync
@@ -235,7 +239,7 @@ async function main(): Promise<void> {
     await sleep(WAIT);
     const folderToken = resolveFolderToken(TEST_PREFIX);
     for (const f of ['s6-a.md', 's6-b.md', 's6-c.md']) {
-      await waitForFile(folderToken!, f);
+      await waitForFile(folderToken!, f, 30000);
     }
     await ensureCleanState(...FILES);
   });
