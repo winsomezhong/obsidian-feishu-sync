@@ -36,6 +36,11 @@ export function deleteFile(params: { file: string }): void {
   cmd(`delete ${param}="${params.file}" permanent`);
 }
 
+/** Reload the obsidian-feishu-sync plugin via Obsidian CLI */
+export function reloadPlugin(): void {
+  cmd(`plugin id="obsidian-feishu-sync" reload`);
+}
+
 // --- Direct filesystem operations (reliably trigger Obsidian events) ---
 
 function vaultFile(relative: string): string {

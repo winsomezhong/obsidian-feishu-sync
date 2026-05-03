@@ -8,7 +8,7 @@ vi.mock('child_process', () => ({ default: { execSync: mockExecSync }, execSync:
 vi.mock('fs', () => ({ default: {}, }));
 vi.mock('path', () => ({ default: { join: (...args: string[]) => args.join('/') }, join: (...args: string[]) => args.join('/') }));
 
-import { createFile, readFile, deleteFile } from './obsidian-cli';
+import { createFile, readFile, deleteFile, reloadPlugin } from './obsidian-cli';
 
 describe('obsidian-cli', () => {
   let execSync: ReturnType<typeof vi.fn>;
@@ -62,6 +62,14 @@ describe('obsidian-cli', () => {
       const cmd: string = execSync.mock.calls[0][0];
       expect(cmd).toContain('delete path="raw/test1.md"');
       expect(cmd).toContain('permanent');
+    });
+  });
+
+  describe('reloadPlugin', () => {
+    it('sends plugin reload command for obsidian-feishu-sync', () => {
+      reloadPlugin();
+      const cmd: string = execSync.mock.calls[0][0];
+      expect(cmd).toContain('plugin id="obsidian-feishu-sync" reload');
     });
   });
 });
