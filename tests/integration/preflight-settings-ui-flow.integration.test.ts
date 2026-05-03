@@ -88,9 +88,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toBe('CLI: lark-cli v1.5.0');
+    expect(cli.text).toBe('lark-cli: ready (v1.5.0)');
     expect(cli.color).toBe('green');
-    expect(auth.text).toBe('Auth: Authorized');
+    expect(auth.text).toBe('Authorized');
     expect(auth.color).toBe('green');
     expect(guidance).toBe('');
   });
@@ -100,9 +100,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toContain('not found');
+    expect(cli.text).toBe('lark-cli: not ready');
     expect(cli.color).toBe('red');
-    expect(auth.text).toContain('checking');
+    expect(auth.text).toBe('Checking...');
     expect(auth.color).toBe('gray');
     expect(guidance).toMatch(/install/i);
   });
@@ -112,9 +112,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toContain('lark-cli');
+    expect(cli.text).toBe('lark-cli: ready (v1.5.0)');
     expect(cli.color).toBe('green');
-    expect(auth.text).toBe('Auth: Not authorized');
+    expect(auth.text).toBe('Not authorized');
     expect(auth.color).toBe('red');
     expect(guidance).toContain('lark-cli auth login');
   });
@@ -124,9 +124,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toContain('lark-cli');
+    expect(cli.text).toBe('lark-cli: ready (v1.5.0)');
     expect(cli.color).toBe('green');
-    expect(auth.text).toBe('Auth: Check failed');
+    expect(auth.text).toBe('Check failed');
     expect(auth.color).toBe('red');
     expect(guidance).toContain('Failed to parse');
   });
@@ -136,9 +136,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toContain('lark-cli');
+    expect(cli.text).toBe('lark-cli: ready');
     expect(cli.color).toBe('green');
-    expect(auth.text).toBe('Auth: Check failed');
+    expect(auth.text).toBe('Check failed');
     expect(auth.color).toBe('red');
     expect(guidance).toContain('Preflight error');
   });
@@ -148,9 +148,9 @@ describe('Settings-to-display flow (integration)', () => {
     const cli = getCliStatusDisplay(settings);
     const auth = getAuthStatusDisplay(settings);
     const guidance = getAuthGuidanceText(settings);
-    expect(cli.text).toContain('checking');
+    expect(cli.text).toBe('lark-cli: checking...');
     expect(cli.color).toBe('gray');
-    expect(auth.text).toContain('checking');
+    expect(auth.text).toBe('Checking...');
     expect(auth.color).toBe('gray');
     expect(guidance).toBe('');
   });
@@ -187,7 +187,7 @@ describe('Refresh callback flow (integration)', () => {
     expect(updated.cliVersion).toBe('3.0.0');
     // Display functions reflect updated state
     expect(getCliStatusDisplay(updated).text).toContain('3.0.0');
-    expect(getAuthStatusDisplay(updated).text).toBe('Auth: Authorized');
+    expect(getAuthStatusDisplay(updated).text).toBe('Authorized');
   });
 
   it('updates settings from preflight on refresh (failure)', async () => {
@@ -196,7 +196,7 @@ describe('Refresh callback flow (integration)', () => {
     expect(updated.lastPreflightStatus).toBe('auth_required');
     expect(updated.cliVersion).toBeUndefined();
     // Display functions reflect failure state
-    expect(getAuthStatusDisplay(updated).text).toBe('Auth: Not authorized');
+    expect(getAuthStatusDisplay(updated).text).toBe('Not authorized');
     expect(getAuthGuidanceText(updated)).toContain('lark-cli auth login');
   });
 
@@ -208,7 +208,7 @@ describe('Refresh callback flow (integration)', () => {
     const updated = await simulateOnRefresh(result);
     expect(updated.lastPreflightStatus).toBe('cli_not_found');
     expect(updated.cliVersion).toBeUndefined();
-    expect(getCliStatusDisplay(updated).text).toContain('not found');
+    expect(getCliStatusDisplay(updated).text).toBe('lark-cli: not ready');
     expect(getAuthGuidanceText(updated)).toMatch(/install/i);
   });
 

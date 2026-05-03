@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText } from './settings-tab';
 import type { SyncPluginSettings } from './settings-tab';
+import { TRANSLATIONS } from '../i18n';
 
 describe('DEFAULT_SETTINGS', () => {
   it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, and language', () => {
@@ -51,73 +52,72 @@ describe('getCliStatusDisplay', () => {
   it('returns checking state when no preflight result persisted', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
     const display = getCliStatusDisplay(settings);
-    expect(display.text).toContain('checking');
+    expect(display.text).toBe('lark-cli: checking...');
     expect(display.color).toBe('gray');
   });
 
-  it('returns version info when CLI is ok', () => {
+  it('returns ready with version when CLI is ok', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok', cliVersion: '1.2.3' };
     const display = getCliStatusDisplay(settings);
-    expect(display.text).toContain('lark-cli');
-    expect(display.text).toContain('1.2.3');
+    expect(display.text).toBe('lark-cli: ready (v1.2.3)');
     expect(display.color).toBe('green');
   });
 
-  it('returns version info without version when cliVersion is missing', () => {
+  it('returns ready without version when cliVersion is missing', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok', cliVersion: undefined };
     const display = getCliStatusDisplay(settings);
-    expect(display.text).toContain('lark-cli');
+    expect(display.text).toBe('lark-cli: ready');
     expect(display.color).toBe('green');
   });
 
-  it('returns not found when CLI is not installed', () => {
+  it('returns not ready when CLI is not installed', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'cli_not_found' };
     const display = getCliStatusDisplay(settings);
-    expect(display.text).toContain('not found');
+    expect(display.text).toBe('lark-cli: not ready');
     expect(display.color).toBe('red');
   });
 
-  it('returns not found for auth-related failures too', () => {
+  it('returns ready for auth-related failures (CLI was found)', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_required' };
     const display = getCliStatusDisplay(settings);
-    expect(display.text).toContain('lark-cli');
+    expect(display.text).toBe('lark-cli: ready');
     expect(display.color).toBe('green');
   });
 });
 
 describe('getAuthStatusDisplay', () => {
-  it('returns checking state when no preflight result persisted', () => {
+  it('returns Checking... when no preflight result persisted', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toContain('checking');
+    expect(display.text).toBe('Checking...');
     expect(display.color).toBe('gray');
   });
 
-  it('returns authorized when status is ok', () => {
+  it('returns Authorized when status is ok', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toContain('Authorized');
+    expect(display.text).toBe('Authorized');
     expect(display.color).toBe('green');
   });
 
-  it('returns not authorized when auth is required', () => {
+  it('returns Not authorized when auth is required', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_required' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toContain('Not authorized');
+    expect(display.text).toBe('Not authorized');
     expect(display.color).toBe('red');
   });
 
-  it('returns check failed when auth check failed', () => {
+  it('returns Check failed when auth check failed', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_check_failed' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toContain('Check failed');
+    expect(display.text).toBe('Check failed');
     expect(display.color).toBe('red');
   });
 
-  it('returns check failed when preflight crashed', () => {
+  it('returns Check failed when preflight crashed', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'preflight_crashed' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toContain('Check failed');
+    expect(display.text).toBe('Check failed');
     expect(display.color).toBe('red');
   });
 });
@@ -156,5 +156,49 @@ describe('getAuthGuidanceText', () => {
     const text = getAuthGuidanceText(settings);
     expect(text).toMatch(/install/i);
     expect(text).toContain('lark-cli');
+  });
+});
+
+describe('i18n integration', () => {
+  it('getCliStatusDisplay ready text matches cliReady translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok', cliVersion: undefined };
+    expect(getCliStatusDisplay(settings).text).toBe(TRANSLATIONS.cliReady.en);
+  });
+
+  it('getCliStatusDisplay checking text matches cliChecking translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
+    expect(getCliStatusDisplay(settings).text).toBe(TRANSLATIONS.cliChecking.en);
+  });
+
+  it('getCliStatusDisplay not-ready text matches cliNotReady translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'cli_not_found' };
+    expect(getCliStatusDisplay(settings).text).toBe(TRANSLATIONS.cliNotReady.en);
+  });
+
+  it('getAuthStatusDisplay authorized text matches authAuthorized translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok' };
+    expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authAuthorized.en);
+  });
+
+  it('getAuthStatusDisplay not-authorized text matches authNotAuthorized translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_required' };
+    expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authNotAuthorized.en);
+  });
+
+  it('getAuthStatusDisplay checking text matches authChecking translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
+    expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authChecking.en);
+  });
+
+  it('getAuthStatusDisplay check-failed text matches authCheckFailed translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_check_failed' };
+    expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authCheckFailed.en);
+  });
+
+  it('SyncPluginSettings language field accepts en and zh', () => {
+    const enSettings: SyncPluginSettings = { ...DEFAULT_SETTINGS, language: 'en' };
+    const zhSettings: SyncPluginSettings = { ...DEFAULT_SETTINGS, language: 'zh' };
+    expect(enSettings.language).toBe('en');
+    expect(zhSettings.language).toBe('zh');
   });
 });

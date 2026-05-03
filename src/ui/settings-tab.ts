@@ -1,5 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type { PreflightStatus } from '../types';
+import { t } from '../i18n';
+import type { Locale } from '../i18n';
 
 export interface SyncPluginSettings {
   folderPath: string;
@@ -30,17 +32,18 @@ export interface CliStatusDisplay {
 
 export function getCliStatusDisplay(settings: SyncPluginSettings): CliStatusDisplay {
   if (!settings.lastPreflightStatus) {
-    return { text: 'CLI: checking...', color: 'gray' };
+    return { text: 'lark-cli: checking...', color: 'gray' };
   }
   if (settings.lastPreflightStatus === 'ok') {
-    const version = settings.cliVersion ? ` v${settings.cliVersion}` : '';
-    return { text: `CLI: lark-cli${version}`, color: 'green' };
+    const version = settings.cliVersion ? ` (v${settings.cliVersion})` : '';
+    return { text: `lark-cli: ready${version}`, color: 'green' };
   }
   if (settings.lastPreflightStatus === 'cli_not_found') {
-    return { text: 'CLI: lark-cli not found', color: 'red' };
+    return { text: 'lark-cli: not ready', color: 'red' };
   }
   // For auth-related statuses, CLI was found but auth failed
-  return { text: 'CLI: lark-cli', color: 'green' };
+  const version = settings.cliVersion ? ` (v${settings.cliVersion})` : '';
+  return { text: `lark-cli: ready${version}`, color: 'green' };
 }
 
 export interface AuthStatusDisplay {
@@ -50,17 +53,17 @@ export interface AuthStatusDisplay {
 
 export function getAuthStatusDisplay(settings: SyncPluginSettings): AuthStatusDisplay {
   if (!settings.lastPreflightStatus) {
-    return { text: 'Auth: checking...', color: 'gray' };
+    return { text: 'Checking...', color: 'gray' };
   }
   switch (settings.lastPreflightStatus) {
     case 'ok':
-      return { text: 'Auth: Authorized', color: 'green' };
+      return { text: 'Authorized', color: 'green' };
     case 'auth_required':
-      return { text: 'Auth: Not authorized', color: 'red' };
+      return { text: 'Not authorized', color: 'red' };
     case 'cli_not_found':
-      return { text: 'Auth: checking...', color: 'gray' };
+      return { text: 'Checking...', color: 'gray' };
     default:
-      return { text: 'Auth: Check failed', color: 'red' };
+      return { text: 'Check failed', color: 'red' };
   }
 }
 
@@ -81,6 +84,7 @@ export function getAuthGuidanceText(settings: SyncPluginSettings): string {
 export class SyncSettingsTab extends PluginSettingTab {
   private resolutionStatusEl: HTMLElement | null = null;
   private cliStatusEl: HTMLElement | null = null;
+  private cliStatusDescEl: HTMLElement | null = null;
   private authStatusEl: HTMLElement | null = null;
   private authGuidanceEl: HTMLElement | null = null;
   private refreshButtonEl: HTMLElement | null = null;
@@ -99,19 +103,22 @@ export class SyncSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Feishu Sync Settings' });
+    const lang: Locale = this.plugin.settings?.language || 'en';
+
+    containerEl.createEl('h2', { text: t('settingsTitle', lang) });
 
     // CLI status display section
     const cliStatusSetting = new Setting(containerEl)
-      .setName('CLI status')
-      .setDesc('Feishu CLI (lark-cli) installation status');
+      .setName(t('cliInstallStatus', lang))
+      .setDesc(t('cliStatusDesc', lang));
+    this.cliStatusDescEl = cliStatusSetting.descEl;
     this.cliStatusEl = cliStatusSetting.descEl.createSpan({ cls: 'feishu-sync-cli-status' });
     this.updateCliStatus();
 
     // Auth status display section
     const authStatusSetting = new Setting(containerEl)
-      .setName('Auth status')
-      .setDesc('Feishu CLI authorization state');
+      .setName(t('authStatus', lang))
+      .setDesc(t('authStatusDesc', lang));
     this.authStatusEl = authStatusSetting.descEl.createSpan({ cls: 'feishu-sync-auth-status' });
     this.authGuidanceEl = authStatusSetting.descEl.createEl('div', { cls: 'feishu-sync-auth-guidance' });
     this.updateAuthStatus();
@@ -119,10 +126,10 @@ export class SyncSettingsTab extends PluginSettingTab {
     // Refresh button
     if (this.onRefresh) {
       new Setting(containerEl)
-        .setName('Refresh status')
-        .setDesc('Re-check CLI installation and authorization')
+        .setName(t('refreshStatus', lang))
+        .setDesc(t('refreshDesc', lang))
         .addButton(button => {
-          button.setButtonText('Refresh');
+          button.setButtonText(t('refresh', lang));
           button.setCta();
           this.refreshButtonEl = button.buttonEl;
           button.onClick(async () => {
@@ -143,8 +150,8 @@ export class SyncSettingsTab extends PluginSettingTab {
     }
 
     const folderPathSetting = new Setting(containerEl)
-      .setName('Folder path')
-      .setDesc('Feishu Drive folder path for file sync (e.g., /My Documents/Sync)')
+      .setName(t('folderPath', lang))
+      .setDesc(t('folderPathDesc', lang))
       .addText(text => text
         .setPlaceholder('/My Documents/Sync')
         .setValue((this.plugin.settings?.folderPath || ''))
@@ -161,8 +168,8 @@ export class SyncSettingsTab extends PluginSettingTab {
     this.updateResolutionStatus();
 
     new Setting(containerEl)
-      .setName('Sync on save')
-      .setDesc('Automatically sync notes when saved')
+      .setName(t('syncOnSave', lang))
+      .setDesc(t('syncOnSaveDesc', lang))
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings?.syncOnSave ?? true)
         .onChange(async value => {
@@ -170,12 +177,27 @@ export class SyncSettingsTab extends PluginSettingTab {
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
         }));
+
+    new Setting(containerEl)
+      .setName(t('language', lang))
+      .setDesc(t('languageDesc', lang))
+      .addDropdown(dropdown => dropdown
+        .addOption('en', 'English')
+        .addOption('zh', '中文')
+        .setValue(this.plugin.settings?.language || 'en')
+        .onChange(async value => {
+          this.plugin.settings.language = value as Locale;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+          this.display();
+        }));
   }
 
   private setRefreshLoading(loading: boolean): void {
     if (!this.refreshButtonEl) return;
+    const lang: Locale = this.plugin.settings?.language || 'en';
     (this.refreshButtonEl as any).disabled = loading;
-    this.refreshButtonEl.setText(loading ? 'Refreshing...' : 'Refresh');
+    this.refreshButtonEl.setText(loading ? t('refreshing', lang) : t('refresh', lang));
   }
 
   private updateCliStatus(): void {
@@ -183,6 +205,20 @@ export class SyncSettingsTab extends PluginSettingTab {
     const display = getCliStatusDisplay(this.plugin.settings);
     this.cliStatusEl.setText(display.text);
     (this.cliStatusEl as any).style.color = display.color;
+
+    // Add install guide link when CLI is not found
+    const existingLink = this.cliStatusDescEl?.querySelector('.feishu-sync-install-link');
+    if (existingLink) {
+      existingLink.remove();
+    }
+    if (this.plugin.settings?.lastPreflightStatus === 'cli_not_found' && this.cliStatusDescEl) {
+      const lang: Locale = this.plugin.settings?.language || 'en';
+      this.cliStatusDescEl.createEl('a', {
+        cls: 'feishu-sync-install-link',
+        text: t('installGuide', lang),
+        href: 'https://open.feishu.cn/document/tools-and-resources/feishu-cli/overview',
+      });
+    }
   }
 
   private updateAuthStatus(): void {
