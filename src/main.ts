@@ -9,6 +9,7 @@ import { SyncSettingsTab, DEFAULT_SETTINGS } from './ui/settings-tab';
 import { SyncStatusBar } from './ui/status-bar';
 import type { SyncPluginSettings } from './ui/settings-tab';
 import type { PreflightResult } from './types';
+import { preflightResultToSettings } from './preflight-utils';
 
 export default class FeishuSyncPlugin extends Plugin {
   engine!: SyncEngine;
@@ -55,10 +56,21 @@ export default class FeishuSyncPlugin extends Plugin {
     } catch (err) {
       preflightResult = { success: false, error: `Preflight error: ${(err as Error).message}`, errorCode: 'PREFLIGHT_CRASHED' };
     }
+    // Persist preflight result to settings
+    const preflightSettings = preflightResultToSettings(preflightResult);
+    this.settings.cliVersion = preflightSettings.cliVersion;
+    this.settings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
+    this.settings.lastPreflightTime = preflightSettings.lastPreflightTime;
+    await this.saveData(this.settings);
     if (!preflightResult.success) {
       this.settings.folderResolutionError = preflightResult.error || 'Preflight failed';
       await this.saveData(this.settings);
-      new Notice(`Feishu Sync: ${preflightResult.error}`, 5000);
+      // Enhanced auth expiry notice (8s) guiding user to settings tab
+      if (preflightResult.errorCode === 'AUTH_REQUIRED') {
+        new Notice('Feishu Sync: Auth not ready. Go to Settings -> Feishu Sync to re-authorize.', 8000);
+      } else {
+        new Notice(`Feishu Sync: ${preflightResult.error}`, 5000);
+      }
     } else if (this.settings.folderPath) {
       // Resolve folder path during preflight and cache result
       try {
@@ -79,6 +91,22 @@ export default class FeishuSyncPlugin extends Plugin {
     // Settings tab
     this.addSettingTab(new SyncSettingsTab(this.app, this, (settings) => {
       this.settings = settings;
+    }, async () => {
+      let refreshResult: PreflightResult;
+      try {
+        refreshResult = await this.bridge.preflight();
+      } catch (err) {
+        refreshResult = { success: false, error: `Preflight error: ${(err as Error).message}`, errorCode: 'PREFLIGHT_CRASHED' };
+      }
+      const preflightSettings = preflightResultToSettings(refreshResult);
+      this.settings.cliVersion = preflightSettings.cliVersion;
+      this.settings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
+      this.settings.lastPreflightTime = preflightSettings.lastPreflightTime;
+      if (!refreshResult.success) {
+        this.settings.folderResolutionError = refreshResult.error || 'Preflight failed';
+      }
+      await this.saveData(this.settings);
+      // The settings tab display() will re-run via the refresh callback
     }));
 
     // Status bar

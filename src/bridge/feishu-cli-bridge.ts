@@ -200,7 +200,10 @@ export class FeishuCliBridge {
   }
 
   async resolveFolderToken(folderPath: string): Promise<string> {
-    const cmd = `${this.config.cliPath} drive +search --query ${this.escapeArg(folderPath)} --doc-types folder`;
+    // Strip leading / for search API compatibility — query is text-based,
+    // and /obsvault won't match a folder named "obsvault"
+    const query = folderPath.replace(/^\/+/, '');
+    const cmd = `${this.config.cliPath} drive +search --query ${this.escapeArg(query)} --doc-types folder`;
     return this.withRetry(async () => {
       try {
         const stdout = await this.executeCommand(cmd);
