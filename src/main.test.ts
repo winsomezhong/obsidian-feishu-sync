@@ -64,6 +64,12 @@ describe('preflightResultToSettings', () => {
     expect(settings.lastPreflightTime).toBeLessThanOrEqual(after);
   });
 
+  it('maps INSUFFICIENT_SCOPE error to insufficient_scope status', () => {
+    const result: PreflightResult = { success: false, error: 'Missing required scopes: drive:file:upload', errorCode: 'INSUFFICIENT_SCOPE' };
+    const settings = preflightResultToSettings(result);
+    expect(settings.lastPreflightStatus).toBe('insufficient_scope');
+  });
+
   it('accepts insufficient_scope as a valid PreflightStatus', () => {
     const status: PreflightStatus = 'insufficient_scope';
     expect(status).toBe('insufficient_scope');

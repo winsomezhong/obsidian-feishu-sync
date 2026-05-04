@@ -15,6 +15,7 @@ export function preflightResultToSettings(result: PreflightResult): PreflightSet
       case 'CLI_NOT_FOUND': lastPreflightStatus = 'cli_not_found'; break;
       case 'AUTH_REQUIRED': lastPreflightStatus = 'auth_required'; break;
       case 'AUTH_CHECK_FAILED': lastPreflightStatus = 'auth_check_failed'; break;
+      case 'INSUFFICIENT_SCOPE': lastPreflightStatus = 'insufficient_scope'; break;
       default: lastPreflightStatus = 'preflight_crashed';
     }
   } else {
