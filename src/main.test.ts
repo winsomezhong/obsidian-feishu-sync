@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { preflightResultToSettings } from './preflight-utils';
-import type { PreflightResult } from './types';
+import type { PreflightResult, PreflightStatus } from './types';
 
 describe('preflightResultToSettings', () => {
   it('maps successful preflight to ok status with cliVersion', () => {
@@ -62,5 +62,10 @@ describe('preflightResultToSettings', () => {
     const after = Date.now();
     expect(settings.lastPreflightTime).toBeGreaterThanOrEqual(before);
     expect(settings.lastPreflightTime).toBeLessThanOrEqual(after);
+  });
+
+  it('accepts insufficient_scope as a valid PreflightStatus', () => {
+    const status: PreflightStatus = 'insufficient_scope';
+    expect(status).toBe('insufficient_scope');
   });
 });
