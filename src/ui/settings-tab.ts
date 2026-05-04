@@ -156,8 +156,10 @@ export class SyncSettingsTab extends PluginSettingTab {
     this.authGuidanceEl = authStatusSetting.descEl.createEl('div', { cls: 'feishu-sync-auth-guidance' });
     this.updateAuthStatus();
 
-    // Authorize button - only shown when auth_required
-    if (this.plugin.settings?.lastPreflightStatus === 'auth_required') {
+    // Authorize button - shown whenever CLI is usable (not cli_not_found or preflight_crashed)
+    if (this.plugin.settings?.lastPreflightStatus
+        && this.plugin.settings.lastPreflightStatus !== 'cli_not_found'
+        && this.plugin.settings.lastPreflightStatus !== 'preflight_crashed') {
       authStatusSetting.addButton(button => {
         button.setButtonText(t('authorize', lang));
         button.setCta();

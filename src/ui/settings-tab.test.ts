@@ -441,10 +441,11 @@ describe('SyncSettingsTab - Authorize button', () => {
     expect(button!.textContent).toBe('Authorize');
   });
 
-  it('does not show Authorize button when status is ok', () => {
+  it('shows Authorize button when status is ok', () => {
     const { containerEl } = createTab({ lastPreflightStatus: 'ok' });
     const button = containerEl.querySelector('button');
-    expect(button).toBeFalsy();
+    expect(button).toBeTruthy();
+    expect(button!.textContent).toBe('Authorize');
   });
 
   it('does not show Authorize button when status is undefined', () => {
@@ -459,8 +460,22 @@ describe('SyncSettingsTab - Authorize button', () => {
     expect(button).toBeFalsy();
   });
 
-  it('does not show Authorize button when status is auth_check_failed', () => {
+  it('shows Authorize button when status is auth_check_failed', () => {
     const { containerEl } = createTab({ lastPreflightStatus: 'auth_check_failed' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeTruthy();
+    expect(button!.textContent).toBe('Authorize');
+  });
+
+  it('shows Authorize button when status is insufficient_scope', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'insufficient_scope' });
+    const button = containerEl.querySelector('button');
+    expect(button).toBeTruthy();
+    expect(button!.textContent).toBe('Authorize');
+  });
+
+  it('does not show Authorize button when status is preflight_crashed', () => {
+    const { containerEl } = createTab({ lastPreflightStatus: 'preflight_crashed' });
     const button = containerEl.querySelector('button');
     expect(button).toBeFalsy();
   });
