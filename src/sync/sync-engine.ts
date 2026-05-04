@@ -120,6 +120,11 @@ export class SyncEngine {
 
   async syncFile(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
+    // Skip .conflict.md files — they should never be synced
+    if (file.path.endsWith('.conflict.md')) return;
+    // Skip online doc local copies — they are pull-only
+    const state = this.tracker.getFileState(file.path);
+    if (state?.isOnlineDoc) return;
 
     const inflight = this.fileLocks.get(file.path);
     if (inflight) {
@@ -218,6 +223,7 @@ export class SyncEngine {
 
   private async onFileDelete(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
+    if (file.path.endsWith('.conflict.md')) return;
     const state = this.tracker.getFileState(file.path);
     if (state) {
       try {
@@ -238,6 +244,7 @@ export class SyncEngine {
 
   private async onFileRename(file: TFile, oldPath: string): Promise<void> {
     if (file.extension !== 'md') return;
+    if (file.path.endsWith('.conflict.md') || oldPath.endsWith('.conflict.md')) return;
     const state = this.tracker.getFileState(oldPath);
     if (state) {
       try {

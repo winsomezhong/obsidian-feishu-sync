@@ -28,6 +28,15 @@ describe('TRANSLATIONS', () => {
     'language',
     'languageDesc',
     'authCommandCopied',
+    'pullSettingsTitle',
+    'pullEnabled',
+    'pullEnabledDesc',
+    'pullInterval',
+    'pullIntervalDesc',
+    'discoverNewFiles',
+    'discoverNewFilesDesc',
+    'syncDeletesToLocal',
+    'syncDeletesToLocalDesc',
   ];
 
   it('has all required translation keys', () => {

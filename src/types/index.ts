@@ -13,3 +13,12 @@ export type PreflightStatus = 'ok' | 'cli_not_found' | 'auth_required' | 'auth_c
 export type PreflightResult =
   | { success: true; cliVersion?: string; authReady: boolean }
   | { success: false; error: string; errorCode?: string };
+
+export type SyncDirection = 'push' | 'pull' | 'skip' | 'conflict';
+
+export interface RemoteFile {
+  token: string;
+  name: string;
+  type: 'file' | 'docx' | 'sheet' | 'bitable' | 'folder';
+  modifiedAt: string;
+}

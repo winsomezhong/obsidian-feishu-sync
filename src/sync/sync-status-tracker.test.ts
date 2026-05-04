@@ -87,4 +87,38 @@ describe('SyncStatusTracker', () => {
     const newTracker = new SyncStatusTracker(testDir);
     expect(newTracker.getFileState('good.md')?.feishuFileToken).toBe('fileGood456');
   });
+
+  it('updateFileState with new optional fields sets isOnlineDoc and docType', () => {
+    tracker.updateFileState('online.md', 'token123', 1000, {
+      isOnlineDoc: true,
+      docType: 'docx',
+      remoteModifiedAt: '2026-05-04T12:00:00Z',
+    });
+    const state = tracker.getFileState('online.md');
+    expect(state?.isOnlineDoc).toBe(true);
+    expect(state?.docType).toBe('docx');
+    expect(state?.remoteModifiedAt).toBe('2026-05-04T12:00:00Z');
+    expect(state?.lastSyncedAtDisplay).toBeDefined();
+  });
+
+  it('updateFileState without extra defaults isOnlineDoc to false and docType to null', () => {
+    tracker.updateFileState('regular.md', 'token456', 2000);
+    const state = tracker.getFileState('regular.md');
+    expect(state?.isOnlineDoc).toBe(false);
+    expect(state?.docType).toBeNull();
+    expect(state?.remoteModifiedAt).toBeUndefined();
+  });
+
+  it('persists new optional fields across tracker instances', () => {
+    tracker.updateFileState('persisted.md', 'token789', 3000, {
+      isOnlineDoc: true,
+      docType: 'sheet',
+      remoteModifiedAt: '2026-05-04T14:00:00Z',
+    });
+    const tracker2 = new SyncStatusTracker(testDir);
+    const state = tracker2.getFileState('persisted.md');
+    expect(state?.isOnlineDoc).toBe(true);
+    expect(state?.docType).toBe('sheet');
+    expect(state?.remoteModifiedAt).toBe('2026-05-04T14:00:00Z');
+  });
 });

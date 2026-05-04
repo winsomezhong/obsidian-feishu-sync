@@ -173,6 +173,22 @@ describe('DEFAULT_SETTINGS', () => {
   it('language defaults to en', () => {
     expect(DEFAULT_SETTINGS.language).toBe('en');
   });
+
+  it('pullEnabled defaults to true', () => {
+    expect(DEFAULT_SETTINGS.pullEnabled).toBe(true);
+  });
+
+  it('pullIntervalMinutes defaults to 10', () => {
+    expect(DEFAULT_SETTINGS.pullIntervalMinutes).toBe(10);
+  });
+
+  it('discoverNewFiles defaults to false', () => {
+    expect(DEFAULT_SETTINGS.discoverNewFiles).toBe(false);
+  });
+
+  it('syncDeletesToLocal defaults to false', () => {
+    expect(DEFAULT_SETTINGS.syncDeletesToLocal).toBe(false);
+  });
 });
 
 describe('getCliStatusDisplay', () => {
@@ -484,5 +500,68 @@ describe('SyncSettingsTab - Language selector', () => {
     const langIdx = names.findIndex(n => n === 'Language');
     expect(authIdx).toBeGreaterThanOrEqual(0);
     expect(langIdx).toBeGreaterThan(authIdx);
+  });
+});
+
+describe('SyncSettingsTab - Pull settings section', () => {
+  function createTabWithEl(overrides: Partial<SyncPluginSettings> = {}) {
+    const app = new App();
+    const plugin = {
+      settings: { ...DEFAULT_SETTINGS, ...overrides },
+      saveData: vi.fn(),
+    };
+    const onSettingsChange = vi.fn();
+    const tab = new SyncSettingsTab(app, plugin, onSettingsChange);
+    (tab as any).containerEl = new MockEl('div');
+    tab.display();
+    return { tab, containerEl: (tab as any).containerEl };
+  }
+
+  it('renders Remote to Local (Pull) section heading', () => {
+    const { containerEl } = createTabWithEl();
+    // h3 headings appear in containerEl children
+    const allChildren = containerEl.children || [];
+    const hasPullTitle = allChildren.some((child: any) =>
+      child.tagName === 'H3' && child._text && child._text.includes('Remote')
+    );
+    expect(hasPullTitle).toBe(true);
+  });
+
+  it('renders pull enabled toggle', () => {
+    const { containerEl } = createTabWithEl();
+    const names = containerEl.getElementsByClassName('setting-item-name');
+    const nameTexts = names.map((n: any) => n._text);
+    expect(nameTexts).toContain('Enable periodic pull');
+  });
+
+  it('renders pull interval input', () => {
+    const { containerEl } = createTabWithEl();
+    const names = containerEl.getElementsByClassName('setting-item-name');
+    const nameTexts = names.map((n: any) => n._text);
+    expect(nameTexts).toContain('Pull interval (minutes)');
+  });
+
+  it('renders discover new files toggle', () => {
+    const { containerEl } = createTabWithEl();
+    const names = containerEl.getElementsByClassName('setting-item-name');
+    const nameTexts = names.map((n: any) => n._text);
+    expect(nameTexts).toContain('Discover new files');
+  });
+
+  it('renders sync deletes to local toggle', () => {
+    const { containerEl } = createTabWithEl();
+    const names = containerEl.getElementsByClassName('setting-item-name');
+    const nameTexts = names.map((n: any) => n._text);
+    expect(nameTexts).toContain('Sync deletes to local');
+  });
+
+  it('pull section appears after sync on save setting', () => {
+    const { containerEl } = createTabWithEl();
+    const names = containerEl.getElementsByClassName('setting-item-name');
+    const nameTexts = names.map((n: any) => n._text);
+    const syncIdx = nameTexts.findIndex((n: string) => n === 'Sync on save');
+    const pullEnabledIdx = nameTexts.findIndex((n: string) => n === 'Enable periodic pull');
+    expect(syncIdx).toBeGreaterThanOrEqual(0);
+    expect(pullEnabledIdx).toBeGreaterThan(syncIdx);
   });
 });

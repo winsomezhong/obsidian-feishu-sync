@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import type { UploadResult, PreflightResult } from '../types';
+import type { UploadResult, PreflightResult, RemoteFile } from '../types';
 
 export class CliNotFoundError extends Error {
   name = 'CliNotFoundError';
@@ -237,6 +237,52 @@ export class FeishuCliBridge {
         if (err instanceof FolderNotFoundError || err instanceof FolderAmbiguousError) throw err;
         throw err;
       }
+    });
+  }
+
+  async listRemoteFiles(folderToken: string): Promise<RemoteFile[]> {
+    const params = JSON.stringify({ folder_token: folderToken });
+    const escapedParams = params.replace(/"/g, '\\"');
+    const cmd = `${this.config.cliPath} drive files list --params "${escapedParams}" --page-all`;
+    return this.withRetry(async () => {
+      const stdout = await this.executeCommand(cmd);
+      const parsed = JSON.parse(stdout);
+      const files = parsed?.data?.files;
+      if (!files || !Array.isArray(files)) return [];
+      return files.map((f: any) => ({
+        token: f.token,
+        name: f.name,
+        type: f.type as RemoteFile['type'],
+        modifiedAt: f.modified_at,
+      }));
+    });
+  }
+
+  async getFileMetadata(fileToken: string): Promise<RemoteFile> {
+    const cmd = `${this.config.cliPath} drive files list --file-token "${fileToken}"`;
+    const stdout = await this.executeCommand(cmd);
+    const parsed = JSON.parse(stdout);
+    const f = parsed?.data?.file ?? parsed?.data?.files?.[0];
+    if (!f) {
+      throw new ApiError(1, `File metadata not found for token: ${fileToken}`, 'FILE_NOT_FOUND');
+    }
+    return {
+      token: f.token,
+      name: f.name,
+      type: f.type as RemoteFile['type'],
+      modifiedAt: f.modified_at,
+    };
+  }
+
+  async downloadFile(fileToken: string, outputPath: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +download --file-token "${fileToken}" --output "${outputPath}"`;
+    await this.withRetry(() => this.executeCommand(cmd));
+  }
+
+  async exportDoc(docToken: string, docType: string): Promise<string> {
+    const cmd = `${this.config.cliPath} drive +export --file-token "${docToken}" --doc-type "${docType}" --output-format "md"`;
+    return this.withRetry(async () => {
+      return await this.executeCommand(cmd);
     });
   }
 

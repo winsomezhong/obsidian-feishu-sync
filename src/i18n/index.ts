@@ -103,6 +103,42 @@ const translations: Record<string, Record<Locale, string>> = {
     en: 'Command copied: lark-cli auth login',
     zh: '命令已复制：lark-cli auth login',
   },
+  pullSettingsTitle: {
+    en: 'Remote → Local (Pull)',
+    zh: '远程 → 本地（拉取）',
+  },
+  pullEnabled: {
+    en: 'Enable periodic pull',
+    zh: '启用定时拉取',
+  },
+  pullEnabledDesc: {
+    en: 'Automatically pull changes from Feishu Drive to local vault',
+    zh: '自动从飞书云盘拉取变更到本地仓库',
+  },
+  pullInterval: {
+    en: 'Pull interval (minutes)',
+    zh: '拉取间隔（分钟）',
+  },
+  pullIntervalDesc: {
+    en: 'How often to check for remote changes (1-1440 minutes)',
+    zh: '多久检查一次远程变更（1-1440 分钟）',
+  },
+  discoverNewFiles: {
+    en: 'Discover new files',
+    zh: '发现新文件',
+  },
+  discoverNewFilesDesc: {
+    en: 'Automatically pull newly discovered remote files',
+    zh: '自动拉取新发现的远程文件',
+  },
+  syncDeletesToLocal: {
+    en: 'Sync deletes to local',
+    zh: '同步删除到本地',
+  },
+  syncDeletesToLocalDesc: {
+    en: 'Delete local files when they are deleted on Feishu Drive',
+    zh: '飞书云盘文件删除时同步删除本地文件',
+  },
 };
 
 export const TRANSLATIONS = translations;

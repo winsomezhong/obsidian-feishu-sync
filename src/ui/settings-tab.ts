@@ -13,6 +13,10 @@ export interface SyncPluginSettings {
   lastPreflightStatus?: PreflightStatus;
   lastPreflightTime?: number;
   language: 'en' | 'zh';
+  pullEnabled: boolean;
+  pullIntervalMinutes: number;
+  discoverNewFiles: boolean;
+  syncDeletesToLocal: boolean;
 }
 
 export const DEFAULT_SETTINGS: SyncPluginSettings = {
@@ -24,6 +28,10 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
   lastPreflightStatus: undefined,
   lastPreflightTime: undefined,
   language: 'en',
+  pullEnabled: true,
+  pullIntervalMinutes: 10,
+  discoverNewFiles: false,
+  syncDeletesToLocal: false,
 };
 
 export interface CliStatusDisplay {
@@ -236,6 +244,57 @@ export class SyncSettingsTab extends PluginSettingTab {
         .setValue(this.plugin.settings?.syncOnSave ?? true)
         .onChange(async value => {
           this.plugin.settings.syncOnSave = value;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+        }));
+
+    // Remote → Local (Pull) section
+    containerEl.createEl('h3', { text: t('pullSettingsTitle', lang) });
+
+    new Setting(containerEl)
+      .setName(t('pullEnabled', lang))
+      .setDesc(t('pullEnabledDesc', lang))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings?.pullEnabled ?? true)
+        .onChange(async value => {
+          this.plugin.settings.pullEnabled = value;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+        }));
+
+    new Setting(containerEl)
+      .setName(t('pullInterval', lang))
+      .setDesc(t('pullIntervalDesc', lang))
+      .addText(text => text
+        .setPlaceholder('10')
+        .setValue(String(this.plugin.settings?.pullIntervalMinutes ?? 10))
+        .onChange(async value => {
+          const num = parseInt(value, 10);
+          if (!isNaN(num) && num >= 1 && num <= 1440) {
+            this.plugin.settings.pullIntervalMinutes = num;
+            await this.plugin.saveData(this.plugin.settings);
+            this.onSettingsChange(this.plugin.settings);
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName(t('discoverNewFiles', lang))
+      .setDesc(t('discoverNewFilesDesc', lang))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings?.discoverNewFiles ?? false)
+        .onChange(async value => {
+          this.plugin.settings.discoverNewFiles = value;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+        }));
+
+    new Setting(containerEl)
+      .setName(t('syncDeletesToLocal', lang))
+      .setDesc(t('syncDeletesToLocalDesc', lang))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings?.syncDeletesToLocal ?? false)
+        .onChange(async value => {
+          this.plugin.settings.syncDeletesToLocal = value;
           await this.plugin.saveData(this.plugin.settings);
           this.onSettingsChange(this.plugin.settings);
         }));

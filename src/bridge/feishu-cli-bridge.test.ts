@@ -422,4 +422,143 @@ describe('FeishuCliBridge', () => {
       await expect(bridge.uploadFile('f.md', 'fld', 'f.md', '/vault')).rejects.toThrow(CliNotFoundError);
     });
   });
+
+  describe('listRemoteFiles', () => {
+    it('returns parsed RemoteFile list from JSON response', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'note.md', token: 'ftok1', type: 'file', modified_at: '2026-05-04T10:00:00Z' },
+              { name: 'doc', token: 'ftok2', type: 'docx', modified_at: '2026-05-04T11:00:00Z' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listRemoteFiles('folderToken');
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('note.md');
+      expect(result[0].token).toBe('ftok1');
+      expect(result[0].type).toBe('file');
+      expect(result[0].modifiedAt).toBe('2026-05-04T10:00:00Z');
+      expect(result[1].type).toBe('docx');
+    });
+
+    it('constructs correct command with folder token', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, JSON.stringify({ data: { files: [] } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.listRemoteFiles('fld123');
+      expect(usedCommand).toContain('drive files list');
+      expect(usedCommand).toContain('--params');
+      expect(usedCommand).toContain('folder_token');
+      expect(usedCommand).toContain('--page-all');
+    });
+
+    it('returns empty array when no files found', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: { files: [] } }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listRemoteFiles('emptyFld');
+      expect(result).toEqual([]);
+    });
+
+    it('handles missing data field gracefully', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({}), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listRemoteFiles('noDataFld');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getFileMetadata', () => {
+    it('returns parsed RemoteFile from response', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            file: { name: 'test.md', token: 'ftok999', type: 'file', modified_at: '2026-05-04T12:00:00Z' },
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.getFileMetadata('ftok999');
+      expect(result.name).toBe('test.md');
+      expect(result.token).toBe('ftok999');
+      expect(result.type).toBe('file');
+      expect(result.modifiedAt).toBe('2026-05-04T12:00:00Z');
+    });
+
+    it('throws when file data is missing', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({ data: {} }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.getFileMetadata('badToken')).rejects.toThrow(ApiError);
+    });
+  });
+
+  describe('downloadFile', () => {
+    it('resolves without error on success', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.downloadFile('ftok555', '/tmp/output.md')).resolves.not.toThrow();
+    });
+
+    it('constructs correct command', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.downloadFile('ftok555', '/tmp/output.md');
+      expect(usedCommand).toContain('drive +download');
+      expect(usedCommand).toContain('--file-token "ftok555"');
+      expect(usedCommand).toContain('--output "/tmp/output.md"');
+    });
+  });
+
+  describe('exportDoc', () => {
+    it('returns markdown content from export command', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '# Exported\n\nHello world', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.exportDoc('docToken', 'docx');
+      expect(result).toBe('# Exported\n\nHello world');
+    });
+
+    it('constructs correct command', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, '# Exported', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.exportDoc('docTokenABC', 'sheet');
+      expect(usedCommand).toContain('drive +export');
+      expect(usedCommand).toContain('--file-token "docTokenABC"');
+      expect(usedCommand).toContain('--doc-type "sheet"');
+      expect(usedCommand).toContain('--output-format "md"');
+    });
+  });
 });

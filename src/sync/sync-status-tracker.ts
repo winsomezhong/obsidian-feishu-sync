@@ -6,6 +6,10 @@ export interface FileSyncState {
   feishuFileToken: string;
   lastSyncedAt: number;
   lastLocalMtime: number;
+  remoteModifiedAt?: string;
+  lastSyncedAtDisplay?: string;
+  docType?: 'file' | 'docx' | 'sheet' | 'bitable' | null;
+  isOnlineDoc?: boolean;
 }
 
 export interface SyncState {
@@ -51,12 +55,26 @@ export class SyncStatusTracker {
     fs.writeFileSync(this.dataPath, JSON.stringify(this.state, null, 2), 'utf-8');
   }
 
-  updateFileState(localPath: string, fileToken: string, mtime: number): void {
+  updateFileState(localPath: string, fileToken: string, mtime: number): void;
+  updateFileState(localPath: string, fileToken: string, mtime: number, extra?: {
+    isOnlineDoc?: boolean;
+    docType?: 'file' | 'docx' | 'sheet' | 'bitable' | null;
+    remoteModifiedAt?: string;
+  }): void;
+  updateFileState(localPath: string, fileToken: string, mtime: number, extra?: {
+    isOnlineDoc?: boolean;
+    docType?: 'file' | 'docx' | 'sheet' | 'bitable' | null;
+    remoteModifiedAt?: string;
+  }): void {
     this.state.files[localPath] = {
       localPath,
       feishuFileToken: fileToken,
       lastSyncedAt: Date.now(),
       lastLocalMtime: mtime,
+      remoteModifiedAt: extra?.remoteModifiedAt,
+      lastSyncedAtDisplay: new Date().toLocaleString(),
+      docType: extra?.docType ?? null,
+      isOnlineDoc: extra?.isOnlineDoc ?? false,
     };
     this.save();
   }

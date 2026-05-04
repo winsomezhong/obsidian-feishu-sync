@@ -4,6 +4,8 @@ import { SyncStatusTracker } from './sync/sync-status-tracker';
 import { ConflictResolver } from './sync/conflict-resolver';
 import { SyncEngine } from './sync/sync-engine';
 import { SyncNotifier } from './sync/sync-notifier';
+import { PullService } from './sync/pull-service';
+import { OnlineDocConverter } from './sync/online-doc-converter';
 
 import { SyncLog } from './sync/sync-log';
 import { SyncSettingsTab, DEFAULT_SETTINGS } from './ui/settings-tab';
@@ -19,6 +21,7 @@ export default class FeishuSyncPlugin extends Plugin {
   syncLog!: SyncLog;
   settings!: SyncPluginSettings;
   statusBar!: SyncStatusBar;
+  pullService!: PullService;
   private autoSyncBatch: Array<{ path: string; success: boolean; error?: Error }> = [];
   private autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -62,6 +65,17 @@ export default class FeishuSyncPlugin extends Plugin {
     this.bridge = new FeishuCliBridge();
     this.tracker = new SyncStatusTracker(dataDir);
     const resolver = new ConflictResolver();
+    const converter = new OnlineDocConverter(this.bridge);
+
+    this.pullService = new PullService(
+      this,
+      this.bridge,
+      this.tracker,
+      resolver,
+      converter,
+      () => this.settings,
+      () => this.settings.resolvedFolderToken,
+    );
 
     this.engine = new SyncEngine(
       this,
@@ -191,15 +205,43 @@ export default class FeishuSyncPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'pull-from-feishu',
+      name: 'Pull from Feishu',
+      callback: async () => {
+        new Notice('Pulling from Feishu...');
+        try {
+          const result = await this.pullService.pullAll();
+          const total = result.successCount + result.failCount;
+          if (total === 0) {
+            new Notice('No files to pull from Feishu', 3000);
+          } else {
+            const msg = `Pulled ${result.successCount} file(s) from Feishu` +
+              (result.failCount > 0 ? `, ${result.failCount} failed` : '') +
+              (result.conflicts.length > 0 ? `, ${result.conflicts.length} conflict(s)` : '');
+            new Notice(msg, 5000);
+          }
+        } catch (err) {
+          new Notice(`Pull from Feishu failed: ${(err as Error).message}`, 8000);
+        }
+      },
+    });
+
     // Auto-start engine for event-driven sync (only if preflight passed)
     if (this.settings.syncOnSave && preflightResult.success) {
       this.engine.start();
+    }
+
+    // Auto-start pull service (only if preflight passed)
+    if (this.settings.pullEnabled && preflightResult.success) {
+      this.pullService.start();
     }
   }
 
   async onunload() {
     console.log('Unloading Feishu Sync plugin');
     this.engine.stop();
+    this.pullService.stop();
     if (this.autoSyncTimer) {
       clearTimeout(this.autoSyncTimer);
       this.autoSyncTimer = null;
