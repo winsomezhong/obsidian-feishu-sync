@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import type { PreflightStatus } from '../types';
 import { t } from '../i18n';
 import type { Locale } from '../i18n';
+import { SCOPE_DOMAIN_MAP } from '../bridge/feishu-cli-bridge';
 
 export interface SyncPluginSettings {
   folderPath: string;
@@ -12,6 +13,7 @@ export interface SyncPluginSettings {
   cliVersion?: string;
   lastPreflightStatus?: PreflightStatus;
   lastPreflightTime?: number;
+  lastMissingScopes?: string[];
   language: 'en' | 'zh';
   pullEnabled: boolean;
   pullIntervalMinutes: number;
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
   cliVersion: undefined,
   lastPreflightStatus: undefined,
   lastPreflightTime: undefined,
+  lastMissingScopes: undefined,
   language: 'en',
   pullEnabled: true,
   pullIntervalMinutes: 10,
@@ -61,20 +64,21 @@ export interface AuthStatusDisplay {
 }
 
 export function getAuthStatusDisplay(settings: SyncPluginSettings): AuthStatusDisplay {
+  const lang: Locale = settings.language || 'en';
   if (!settings.lastPreflightStatus) {
-    return { text: 'Checking...', color: 'gray' };
+    return { text: t('authChecking', lang), color: 'gray' };
   }
   switch (settings.lastPreflightStatus) {
     case 'ok':
-      return { text: 'Authorized', color: 'green' };
+      return { text: t('authAuthorized', lang), color: 'green' };
     case 'auth_required':
-      return { text: 'Not authorized', color: 'red' };
+      return { text: t('authNotAuthorized', lang), color: 'red' };
     case 'cli_not_found':
-      return { text: 'Checking...', color: 'gray' };
+      return { text: t('authChecking', lang), color: 'gray' };
     case 'insufficient_scope':
-      return { text: 'Insufficient scope', color: 'red' };
+      return { text: t('authInsufficientScope', lang), color: 'red' };
     default:
-      return { text: 'Check failed', color: 'red' };
+      return { text: t('authCheckFailed', lang), color: 'red' };
   }
 }
 
@@ -85,13 +89,51 @@ export function getAuthGuidanceText(settings: SyncPluginSettings): string {
   switch (settings.lastPreflightStatus) {
     case 'auth_required':
       return 'Run \`lark-cli auth login\` in your terminal to authorize.';
-    case 'insufficient_scope':
+    case 'insufficient_scope': {
+      const lang: Locale = settings.language || 'en';
+      if (settings.lastMissingScopes && settings.lastMissingScopes.length > 0) {
+        return formatMissingScopes(settings.lastMissingScopes, lang);
+      }
       return 'Insufficient scope. Run \`lark-cli auth login\` to re-authorize with the required scopes.';
+    }
     case 'cli_not_found':
       return 'Install lark-cli and ensure it is available in your PATH.';
     default:
       return settings.folderResolutionError || 'Preflight check failed. See console for details.';
   }
+}
+
+/**
+ * Groups missing scopes by business domain and returns a human-readable
+ * multi-line string using the specified locale.
+ */
+export function formatMissingScopes(missingScopes: string[], lang: Locale): string {
+  const domainGroups = new Map<string, string[]>();
+  for (const scope of missingScopes) {
+    const domainKey = SCOPE_DOMAIN_MAP[scope] || 'unknown';
+    if (!domainGroups.has(domainKey)) {
+      domainGroups.set(domainKey, []);
+    }
+    domainGroups.get(domainKey)!.push(scope);
+  }
+
+  const lines: string[] = [];
+  lines.push(t('authMissingScopesIntro', lang));
+
+  // Sort by domain key for stable output
+  const sortedDomains = [...domainGroups.keys()].sort();
+  for (const domainKey of sortedDomains) {
+    const scopes = domainGroups.get(domainKey)!;
+    const domainI18nKey = 'domain' + domainKey.charAt(0).toUpperCase() + domainKey.slice(1);
+    const displayName = t(domainI18nKey, lang);
+    for (const scope of scopes) {
+      lines.push(`• ${displayName} (${domainKey}): ${scope}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(t('authMissingScopesReauth', lang));
+  return lines.join('\n');
 }
 
 export function launchAuthLogin(): void {
@@ -344,6 +386,7 @@ export class SyncSettingsTab extends PluginSettingTab {
     if (this.authGuidanceEl) {
       this.authGuidanceEl.setText(guidance);
       (this.authGuidanceEl as any).style.color = guidance ? 'red' : 'inherit';
+      (this.authGuidanceEl as any).style.whiteSpace = 'pre-wrap';
     }
   }
 

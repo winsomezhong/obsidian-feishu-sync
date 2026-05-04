@@ -147,6 +147,30 @@ const translations: Record<string, Record<Locale, string>> = {
     en: 'Missing scopes: {scopes}. Run `lark-cli auth login` to re-authorize.',
     zh: '缺少权限：{scopes}。请运行 `lark-cli auth login` 重新授权。',
   },
+  authMissingScopesIntro: {
+    en: 'Missing permissions in these business domains:',
+    zh: '缺少以下业务域权限：',
+  },
+  authMissingScopesReauth: {
+    en: 'Run `lark-cli auth login` to re-authorize.',
+    zh: '请运行 `lark-cli auth login` 重新授权。',
+  },
+  domainDrive: {
+    en: 'Drive',
+    zh: '云空间',
+  },
+  domainDocs: {
+    en: 'Docs',
+    zh: '文档',
+  },
+  domainSheets: {
+    en: 'Sheets',
+    zh: '电子表格',
+  },
+  domainBase: {
+    en: 'Base',
+    zh: '多维表格',
+  },
 };
 
 export const TRANSLATIONS = translations;

@@ -8,6 +8,7 @@ import {
   RateLimitError,
   FeishuCliBridge,
   REQUIRED_SCOPES,
+  SCOPE_DOMAIN_MAP,
 } from './feishu-cli-bridge';
 
 vi.mock('child_process', () => ({
@@ -59,18 +60,38 @@ describe('FeishuCliBridge errors', () => {
 });
 
 describe('REQUIRED_SCOPES', () => {
-  it('defines all 6 required scopes for Feishu API access', () => {
-    expect(REQUIRED_SCOPES).toHaveLength(6);
+  it('defines all 7 required scopes for Feishu API access', () => {
+    expect(REQUIRED_SCOPES).toHaveLength(7);
     expect(REQUIRED_SCOPES).toContain('drive:file:upload');
     expect(REQUIRED_SCOPES).toContain('drive:drive.metadata:readonly');
     expect(REQUIRED_SCOPES).toContain('drive:file:download');
     expect(REQUIRED_SCOPES).toContain('docx:document:readonly');
     expect(REQUIRED_SCOPES).toContain('sheets:spreadsheet:read');
-    expect(REQUIRED_SCOPES).toContain('bitable:app:read');
+    expect(REQUIRED_SCOPES).toContain('base:app:read');
+    expect(REQUIRED_SCOPES).toContain('search:docs:read');
   });
 
   it('is a readonly tuple so scope list cannot be mutated', () => {
     expect(Array.isArray(REQUIRED_SCOPES)).toBe(true);
+  });
+});
+
+describe('SCOPE_DOMAIN_MAP', () => {
+  it('maps all 7 required scopes to their business domains', () => {
+    expect(Object.keys(SCOPE_DOMAIN_MAP)).toHaveLength(7);
+    expect(SCOPE_DOMAIN_MAP['drive:file:upload']).toBe('drive');
+    expect(SCOPE_DOMAIN_MAP['drive:drive.metadata:readonly']).toBe('drive');
+    expect(SCOPE_DOMAIN_MAP['drive:file:download']).toBe('drive');
+    expect(SCOPE_DOMAIN_MAP['docx:document:readonly']).toBe('docs');
+    expect(SCOPE_DOMAIN_MAP['sheets:spreadsheet:read']).toBe('sheets');
+    expect(SCOPE_DOMAIN_MAP['base:app:read']).toBe('base');
+    expect(SCOPE_DOMAIN_MAP['search:docs:read']).toBe('docs');
+  });
+
+  it('each scope in REQUIRED_SCOPES has a domain mapping', () => {
+    for (const scope of REQUIRED_SCOPES) {
+      expect(SCOPE_DOMAIN_MAP).toHaveProperty(scope);
+    }
   });
 });
 
@@ -203,7 +224,7 @@ describe('FeishuCliBridge', () => {
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
           cb(null, JSON.stringify({
             tokenStatus: 'valid',
-            scope: 'drive:file:upload drive:drive.metadata:readonly drive:file:download docx:document:readonly sheets:spreadsheet:read bitable:app:read',
+            scope: 'drive:file:upload drive:drive.metadata:readonly drive:file:download docx:document:readonly sheets:spreadsheet:read base:app:read search:docs:read',
           }), '');
           return mockChild();
         });
@@ -266,6 +287,13 @@ describe('FeishuCliBridge', () => {
         expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
         expect(result.error).toContain('Missing required scopes');
         expect(result.error).toContain('docx:document:readonly');
+        expect(result.missingScopes).toBeDefined();
+        expect(result.missingScopes!.length).toBe(5);
+        expect(result.missingScopes).toContain('docx:document:readonly');
+        expect(result.missingScopes).toContain('sheets:spreadsheet:read');
+        expect(result.missingScopes).toContain('base:app:read');
+        expect(result.missingScopes).toContain('drive:file:download');
+        expect(result.missingScopes).toContain('search:docs:read');
       }
     });
 
@@ -284,6 +312,8 @@ describe('FeishuCliBridge', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
+        expect(result.missingScopes).toBeDefined();
+        expect(result.missingScopes!.length).toBe(7);
       }
     });
 
@@ -302,6 +332,8 @@ describe('FeishuCliBridge', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
+        expect(result.missingScopes).toBeDefined();
+        expect(result.missingScopes!.length).toBe(7);
       }
     });
   });

@@ -13,6 +13,7 @@ import { SyncStatusBar } from './ui/status-bar';
 import type { SyncPluginSettings } from './ui/settings-tab';
 import type { PreflightResult } from './types';
 import { preflightResultToSettings } from './preflight-utils';
+import { isAuthApiError } from './auth-error-detector';
 
 export default class FeishuSyncPlugin extends Plugin {
   engine!: SyncEngine;
@@ -99,6 +100,7 @@ export default class FeishuSyncPlugin extends Plugin {
     this.settings.cliVersion = preflightSettings.cliVersion;
     this.settings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
     this.settings.lastPreflightTime = preflightSettings.lastPreflightTime;
+    this.settings.lastMissingScopes = preflightSettings.lastMissingScopes;
     await this.saveData(this.settings);
     if (!preflightResult.success) {
       this.settings.folderResolutionError = preflightResult.error || 'Preflight failed';
@@ -118,6 +120,13 @@ export default class FeishuSyncPlugin extends Plugin {
         await this.saveData(this.settings);
       } catch (err) {
         this.settings.folderResolutionError = (err as Error).message;
+        // If the API call fails with an auth error, the cached preflight
+        // status is stale (token was revoked server-side).  Invalidate it.
+        if (isAuthApiError(err)) {
+          this.settings.lastPreflightStatus = 'auth_required';
+          this.settings.cliVersion = undefined;
+          new Notice('Feishu Sync: Auth token expired or revoked. Go to Settings -> Feishu Sync to re-authorize.', 8000);
+        }
         await this.saveData(this.settings);
         new Notice(
           `Feishu Sync: Failed to resolve folder path "${this.settings.folderPath}": ${(err as Error).message}`,
@@ -140,6 +149,7 @@ export default class FeishuSyncPlugin extends Plugin {
       this.settings.cliVersion = preflightSettings.cliVersion;
       this.settings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
       this.settings.lastPreflightTime = preflightSettings.lastPreflightTime;
+      this.settings.lastMissingScopes = preflightSettings.lastMissingScopes;
       if (!refreshResult.success) {
         this.settings.folderResolutionError = refreshResult.error || 'Preflight failed';
       } else if (this.settings.folderPath) {
@@ -150,6 +160,11 @@ export default class FeishuSyncPlugin extends Plugin {
         } catch (err) {
           this.settings.resolvedFolderToken = '';
           this.settings.folderResolutionError = (err as Error).message;
+          if (isAuthApiError(err)) {
+            this.settings.lastPreflightStatus = 'auth_required';
+            this.settings.cliVersion = undefined;
+            this.settings.lastMissingScopes = undefined;
+          }
         }
       }
       await this.saveData(this.settings);

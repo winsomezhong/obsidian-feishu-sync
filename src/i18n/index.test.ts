@@ -39,6 +39,12 @@ describe('TRANSLATIONS', () => {
     'syncDeletesToLocalDesc',
     'authInsufficientScope',
     'authMissingScopes',
+    'authMissingScopesIntro',
+    'authMissingScopesReauth',
+    'domainDrive',
+    'domainDocs',
+    'domainSheets',
+    'domainBase',
   ];
 
   it('has all required translation keys', () => {

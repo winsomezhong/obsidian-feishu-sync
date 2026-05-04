@@ -20,6 +20,7 @@ describe('Preflight-to-settings persistence flow (integration)', () => {
     settings.cliVersion = preflightSettings.cliVersion;
     settings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
     settings.lastPreflightTime = preflightSettings.lastPreflightTime;
+    settings.lastMissingScopes = preflightSettings.lastMissingScopes;
     if (!result.success) {
       settings.folderResolutionError = result.error || 'Preflight failed';
     }
@@ -50,6 +51,13 @@ describe('Preflight-to-settings persistence flow (integration)', () => {
     expect(settings.cliVersion).toBeUndefined();
   });
 
+  it('persists insufficient_scope with missingScopes when scopes are missing', () => {
+    const result: PreflightResult = { success: false, error: 'Missing required scopes: drive:file:upload', errorCode: 'INSUFFICIENT_SCOPE', missingScopes: ['drive:file:upload'] };
+    const settings = simulateMainOnloadPersistence(result);
+    expect(settings.lastPreflightStatus).toBe('insufficient_scope');
+    expect(settings.lastMissingScopes).toEqual(['drive:file:upload']);
+  });
+
   it('persists preflight_crashed when preflight throws unexpectedly', () => {
     const result: PreflightResult = { success: false, error: 'Preflight error: unexpected crash', errorCode: 'PREFLIGHT_CRASHED' };
     const settings = simulateMainOnloadPersistence(result);
@@ -71,6 +79,7 @@ describe('Preflight-to-settings persistence flow (integration)', () => {
       cliVersion: preflightSettings.cliVersion,
       lastPreflightStatus: preflightSettings.lastPreflightStatus,
       lastPreflightTime: preflightSettings.lastPreflightTime,
+      lastMissingScopes: preflightSettings.lastMissingScopes,
     };
     expect(merged.folderPath).toBe('/My Sync');
     expect(merged.resolvedFolderToken).toBe('token_abc');
@@ -143,6 +152,25 @@ describe('Settings-to-display flow (integration)', () => {
     expect(guidance).toContain('Preflight error');
   });
 
+  it('produces consistent display for insufficient_scope with missing scopes', () => {
+    const settings: SyncPluginSettings = {
+      ...DEFAULT_SETTINGS,
+      lastPreflightStatus: 'insufficient_scope',
+      lastMissingScopes: ['drive:file:upload', 'docx:document:readonly'],
+    };
+    const cli = getCliStatusDisplay(settings);
+    const auth = getAuthStatusDisplay(settings);
+    const guidance = getAuthGuidanceText(settings);
+    expect(cli.text).toContain('ready');
+    expect(cli.color).toBe('green');
+    expect(auth.text).toBe('Insufficient scope');
+    expect(auth.color).toBe('red');
+    expect(guidance).toContain('Drive');
+    expect(guidance).toContain('Docs');
+    expect(guidance).toContain('drive:file:upload');
+    expect(guidance).toContain('lark-cli auth login');
+  });
+
   it('produces consistent display for uninitialized state (no preflight yet)', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
     const cli = getCliStatusDisplay(settings);
@@ -174,6 +202,7 @@ describe('Refresh callback flow (integration)', () => {
     capturedSettings.cliVersion = preflightSettings.cliVersion;
     capturedSettings.lastPreflightStatus = preflightSettings.lastPreflightStatus;
     capturedSettings.lastPreflightTime = preflightSettings.lastPreflightTime;
+    capturedSettings.lastMissingScopes = preflightSettings.lastMissingScopes;
     if (!bridgeResult.success) {
       capturedSettings.folderResolutionError = bridgeResult.error || 'Preflight failed';
     }

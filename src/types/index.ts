@@ -12,7 +12,7 @@ export type PreflightStatus = 'ok' | 'cli_not_found' | 'auth_required' | 'auth_c
 
 export type PreflightResult =
   | { success: true; cliVersion?: string; authReady: boolean }
-  | { success: false; error: string; errorCode?: string };
+  | { success: false; error: string; errorCode?: string; missingScopes?: string[] };
 
 export type SyncDirection = 'push' | 'pull' | 'skip' | 'conflict';
 

@@ -80,8 +80,20 @@ export const REQUIRED_SCOPES = [
   'drive:file:download',
   'docx:document:readonly',
   'sheets:spreadsheet:read',
-  'bitable:app:read',
+  'base:app:read',
+  'search:docs:read',
 ] as const;
+
+/** Maps each required scope to its Feishu business domain key. */
+export const SCOPE_DOMAIN_MAP: Record<string, string> = {
+  'drive:file:upload': 'drive',
+  'drive:drive.metadata:readonly': 'drive',
+  'drive:file:download': 'drive',
+  'docx:document:readonly': 'docs',
+  'sheets:spreadsheet:read': 'sheets',
+  'base:app:read': 'base',
+  'search:docs:read': 'docs',
+};
 
 export class FeishuCliBridge {
   constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {
@@ -163,7 +175,7 @@ export class FeishuCliBridge {
         const grantedScopes = (authData?.scope || '').split(' ').filter(Boolean);
         const missingScopes = REQUIRED_SCOPES.filter(s => !grantedScopes.includes(s));
         if (missingScopes.length > 0) {
-          return { success: false, error: `Missing required scopes: ${missingScopes.join(', ')}`, errorCode: 'INSUFFICIENT_SCOPE' };
+          return { success: false, error: `Missing required scopes: ${missingScopes.join(', ')}`, errorCode: 'INSUFFICIENT_SCOPE', missingScopes };
         }
 
         return { success: true, cliVersion, authReady: true };

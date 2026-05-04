@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText, launchAuthLogin, SyncSettingsTab } from './settings-tab';
+import { DEFAULT_SETTINGS, getCliStatusDisplay, getAuthStatusDisplay, getAuthGuidanceText, formatMissingScopes, launchAuthLogin, SyncSettingsTab } from './settings-tab';
 import type { SyncPluginSettings } from './settings-tab';
 import { TRANSLATIONS } from '../i18n';
 import { App, Notice, PluginSettingTab } from 'obsidian';
@@ -131,7 +131,7 @@ beforeAll(() => {
 });
 
 describe('DEFAULT_SETTINGS', () => {
-  it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, and language', () => {
+  it('has folderPath, resolvedFolderToken, folderResolutionError, syncOnSave, cliVersion, lastPreflightStatus, lastPreflightTime, lastMissingScopes, and language', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('folderPath');
     expect(DEFAULT_SETTINGS).toHaveProperty('resolvedFolderToken');
     expect(DEFAULT_SETTINGS).toHaveProperty('folderResolutionError');
@@ -139,6 +139,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('cliVersion');
     expect(DEFAULT_SETTINGS).toHaveProperty('lastPreflightStatus');
     expect(DEFAULT_SETTINGS).toHaveProperty('lastPreflightTime');
+    expect(DEFAULT_SETTINGS).toHaveProperty('lastMissingScopes');
     expect(DEFAULT_SETTINGS).toHaveProperty('language');
   });
 
@@ -168,6 +169,10 @@ describe('DEFAULT_SETTINGS', () => {
 
   it('lastPreflightTime defaults to undefined', () => {
     expect(DEFAULT_SETTINGS.lastPreflightTime).toBeUndefined();
+  });
+
+  it('lastMissingScopes defaults to undefined', () => {
+    expect(DEFAULT_SETTINGS.lastMissingScopes).toBeUndefined();
   });
 
   it('language defaults to en', () => {
@@ -232,42 +237,42 @@ describe('getAuthStatusDisplay', () => {
   it('returns Checking... when no preflight result persisted', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: undefined };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Checking...');
+    expect(display.text).toBe(TRANSLATIONS.authChecking.en);
     expect(display.color).toBe('gray');
   });
 
   it('returns Authorized when status is ok', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'ok' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Authorized');
+    expect(display.text).toBe(TRANSLATIONS.authAuthorized.en);
     expect(display.color).toBe('green');
   });
 
   it('returns Not authorized when auth is required', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_required' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Not authorized');
+    expect(display.text).toBe(TRANSLATIONS.authNotAuthorized.en);
     expect(display.color).toBe('red');
   });
 
   it('returns Check failed when auth check failed', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_check_failed' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Check failed');
+    expect(display.text).toBe(TRANSLATIONS.authCheckFailed.en);
     expect(display.color).toBe('red');
   });
 
   it('returns Check failed when preflight crashed', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'preflight_crashed' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Check failed');
+    expect(display.text).toBe(TRANSLATIONS.authCheckFailed.en);
     expect(display.color).toBe('red');
   });
 
   it('returns Insufficient scope when status is insufficient_scope', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'insufficient_scope' };
     const display = getAuthStatusDisplay(settings);
-    expect(display.text).toBe('Insufficient scope');
+    expect(display.text).toBe(TRANSLATIONS.authInsufficientScope.en);
     expect(display.color).toBe('red');
   });
 });
@@ -308,11 +313,75 @@ describe('getAuthGuidanceText', () => {
     expect(text).toContain('lark-cli');
   });
 
-  it('returns re-auth guide when insufficient_scope', () => {
+  it('returns domain-grouped scopes when insufficient_scope with missingScopes', () => {
+    const settings: SyncPluginSettings = {
+      ...DEFAULT_SETTINGS,
+      lastPreflightStatus: 'insufficient_scope',
+      lastMissingScopes: ['drive:file:upload', 'docx:document:readonly'],
+    };
+    const text = getAuthGuidanceText(settings);
+    expect(text).toContain('Missing permissions in these business domains');
+    expect(text).toContain('Drive');
+    expect(text).toContain('Docs');
+    expect(text).toContain('drive:file:upload');
+    expect(text).toContain('docx:document:readonly');
+    expect(text).toContain('lark-cli auth login');
+    expect(text).toContain('re-authorize');
+  });
+
+  it('returns re-auth guide when insufficient_scope without missingScopes (backward compat)', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'insufficient_scope' };
     const text = getAuthGuidanceText(settings);
     expect(text).toContain('lark-cli auth login');
     expect(text).toContain('re-authorize');
+  });
+});
+
+describe('formatMissingScopes', () => {
+  it('groups scopes by business domain (en)', () => {
+    const text = formatMissingScopes(['drive:file:upload', 'docx:document:readonly'], 'en');
+    expect(text).toContain('Missing permissions in these business domains');
+    expect(text).toContain('Drive (drive): drive:file:upload');
+    expect(text).toContain('Docs (docs): docx:document:readonly');
+    expect(text).toContain('Run `lark-cli auth login` to re-authorize.');
+  });
+
+  it('groups scopes by business domain (zh)', () => {
+    const text = formatMissingScopes(['drive:file:upload', 'base:app:read'], 'zh');
+    expect(text).toContain('缺少以下业务域权限');
+    expect(text).toContain('云空间 (drive): drive:file:upload');
+    expect(text).toContain('多维表格 (base): base:app:read');
+  });
+
+  it('groups multiple scopes under the same domain', () => {
+    const text = formatMissingScopes(['drive:file:upload', 'drive:file:download', 'docx:document:readonly'], 'en');
+    expect(text).toContain('Drive (drive): drive:file:upload');
+    expect(text).toContain('Drive (drive): drive:file:download');
+    expect(text).toContain('Docs (docs): docx:document:readonly');
+  });
+
+  it('handles all 7 scopes missing', () => {
+    const allScopes = [
+      'drive:file:upload', 'drive:drive.metadata:readonly', 'drive:file:download',
+      'docx:document:readonly', 'sheets:spreadsheet:read', 'base:app:read',
+      'search:docs:read',
+    ];
+    const text = formatMissingScopes(allScopes, 'en');
+    expect(text).toContain('Drive (drive)');
+    expect(text).toContain('Docs (docs)');
+    expect(text).toContain('Sheets (sheets)');
+    expect(text).toContain('Base (base)');
+  });
+
+  it('handles single scope missing', () => {
+    const text = formatMissingScopes(['drive:file:upload'], 'en');
+    expect(text).toContain('Drive (drive): drive:file:upload');
+    expect(text).not.toContain('Docs');
+  });
+
+  it('handles scope not in SCOPE_DOMAIN_MAP gracefully', () => {
+    const text = formatMissingScopes(['unknown:scope'], 'en');
+    expect(text).toContain('unknown');
   });
 });
 
