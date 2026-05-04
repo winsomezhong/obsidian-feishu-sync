@@ -80,7 +80,6 @@ merge-to-main [team-lead]
 8. qa-teammate 认领 e2e-test (依赖 integration-test)
    spec-teammate 认领 archive-spec (依赖 verify-spec)
 9. Team Lead 执行 merge-to-main
-10. Team Lead 执行环境部署
 ```
 
 > ⚠️ **HUMAN GATE 是唯一必停点**：Team Lead 在 propose-spec 完成后必须等待人类明确批准（"可以"/"开始"/"LGTM"/"+1"），不得自动续接。之后的 Phase 循环和验证全部自动执行。
@@ -129,7 +128,6 @@ finish [team-lead]
 7. regression-test 通过 → qa-teammate 认领 e2e-test
 8. review-teammate 认领 spec-impact-check → 自动判定并回写
 9. Team Lead 执行 finish（合并 + 清理）
-10. Team Lead 执行 部署
 ```
 
 > ⚡ **并行收益**：步骤 5 是 Agent Team 相比原先 Superpowers 串行链的核心优势——代码审查不再等实现完成，而是在第一次提交后就启动，实现和审查交替进行，大幅缩短总耗时。
@@ -163,7 +161,6 @@ finish [team-lead]
 | **人类门控** | Path A 的 propose→批准 必须等待人类信号 |
 | **监控进度** | 用 TaskList 查看团队状态，但不要微管理 |
 | **最终合并** | 所有 task completed 后，合并到 main + 推送 + 清理 |
-| **部署** | 构建并部署环境 |
 
 ### 队员通信协议
 
@@ -242,9 +239,6 @@ Superpowers **不再作为顶层串行链**使用（原先的 Path A/B 已由 Ag
 - **单元测试**：使用 vitest，测试文件与被测文件同目录，后缀 `.test.ts`。遵循 TDD 原则：先写测试，再写实现
 - **集成测试**：`tests/integration/` 目录，后缀 `.integration.test.ts`。覆盖跨模块接口协调和数据流。所有 Phase 完成后自动编写并执行
 - **全量回归**：Path B 完成子代理执行后，必须运行 `npm test`（单元 + 集成 + E2E），确认不引入回归
-
-### 部署规范
--  **部署环境**：D:\华为云盘\obsvault
 
 ### 归档要求
 - 每次功能变更完成后必须运行 `/opsx:archive`

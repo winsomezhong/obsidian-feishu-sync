@@ -8,3 +8,7 @@ main.js
 *.d.ts.map
 /.worktrees
 /openspec
+/CLAUDE.md
+/*.bak
+/CLAUDE.md
+/docs
