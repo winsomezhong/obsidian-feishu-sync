@@ -251,6 +251,35 @@ async function main(): Promise<void> {
     await ensureCleanState(...FILES);
   });
 
+  // Scenario 7: Re-sync after external Drive deletion (error 1061007 resilience)
+  await runTest('S7: Re-sync after external Drive deletion', async () => {
+    const FILE = `${TEST_PREFIX}s7-recover.md`;
+    await ensureCleanState(FILE);
+
+    // Step 1: Create and sync
+    obsidian.createFile({ name: 's7-recover.md', content: '# Version 1', path: TEST_PREFIX });
+    const folderToken = resolveFolderToken(TEST_PREFIX);
+    assert(folderToken !== null, 'folder token resolved');
+    await waitForFile(folderToken!, 's7-recover.md');
+
+    // Step 2: Simulate external deletion — delete the Drive file directly via lark-cli, bypassing the plugin
+    const driveFile = feishu.findFile(folderToken!, 's7-recover.md');
+    assert(driveFile !== null, 'Drive file exists before external delete');
+    feishu.deleteFileByToken(driveFile!.token);
+    await waitForFileGone(folderToken!, 's7-recover.md');
+
+    // Step 3: Modify local file to trigger re-sync.
+    // The plugin will try to delete the old (already-gone) Drive token and MUST handle 1061007 gracefully,
+    // then upload the new version.
+    obsidian.appendContentFs(FILE, '\n# Version 2');
+
+    // Step 4: Verify the file appears back on Drive with updated content
+    await waitForContent(folderToken!, 's7-recover.md', 'Version 2');
+
+    await ensureCleanState(FILE);
+    await sleep(WAIT);
+  });
+
   console.log('\n=== E2E Complete ===');
 }
 

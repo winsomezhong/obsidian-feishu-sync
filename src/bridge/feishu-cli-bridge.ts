@@ -97,7 +97,9 @@ export class FeishuCliBridge {
           if (stderr) {
             try {
               const parsed = JSON.parse(stderr);
-              reject(new ApiError(parsed.code ?? 1, parsed.msg ?? stderr, parsed.code?.toString() ?? 'UNKNOWN', parsed.data));
+              const code = parsed.error?.code ?? parsed.code;
+              const message = parsed.error?.message ?? parsed.msg ?? stderr;
+              reject(new ApiError(code ?? 1, message, code?.toString() ?? 'UNKNOWN', parsed.data));
             } catch {
               reject(new ApiError(1, stderr || err.message, 'UNKNOWN'));
             }

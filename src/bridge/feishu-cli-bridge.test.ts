@@ -131,6 +131,49 @@ describe('FeishuCliBridge', () => {
       const bridge = new FeishuCliBridge();
       await expect(bridge.executeCommand('fail-cmd')).rejects.toThrow(ApiError);
     });
+
+    it('extracts error code from nested Feishu API error format', async () => {
+      const err = new Error('command failed');
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', JSON.stringify({
+          ok: false,
+          error: { code: 1061007, message: 'API call failed: [1061007] file has been delete.' },
+        }));
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      let caught: any;
+      try {
+        await bridge.executeCommand('fail-cmd');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ApiError);
+      expect(caught.code).toBe('1061007');
+      expect(caught.message).toContain('file has been delete');
+    });
+
+    it('prefers nested error format over flat format when both present', async () => {
+      const err = new Error('command failed');
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(err, '', JSON.stringify({
+          code: 1,
+          msg: 'flat msg',
+          error: { code: 1061007, message: 'nested error message' },
+        }));
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      let caught: any;
+      try {
+        await bridge.executeCommand('fail-cmd');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ApiError);
+      expect(caught.code).toBe('1061007');
+      expect(caught.message).toContain('nested error message');
+    });
   });
 
   describe('preflight', () => {

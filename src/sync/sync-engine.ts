@@ -158,7 +158,7 @@ export class SyncEngine {
         await this.bridge.deleteFile(state.feishuFileToken);
       } catch (err: any) {
         const isAlreadyDeleted = err?.code === '1061007' || err?.code === 1061007 ||
-          (err?.message && /already\s+deleted|not\s+found|does\s+not\s+exist/i.test(err.message));
+          (err?.message && /already\s+deleted|been\s+delete|not\s+found|does\s+not\s+exist/i.test(err.message));
         if (isAlreadyDeleted) {
           console.warn(`Feishu Sync: old file already deleted for ${file.path}, skipping delete`);
         } else {
@@ -224,7 +224,7 @@ export class SyncEngine {
         await this.bridge.deleteFile(state.feishuFileToken);
       } catch (err: any) {
         const isAlreadyDeleted = err?.code === '1061007' || err?.code === 1061007 ||
-          (err?.message && /already\s+deleted|not\s+found|does\s+not\s+exist/i.test(err.message));
+          (err?.message && /already\s+deleted|been\s+delete|not\s+found|does\s+not\s+exist/i.test(err.message));
         if (!isAlreadyDeleted) {
           console.error(`Failed to delete drive file for ${file.path}:`, err);
           this.onAutoSyncResult?.({ path: file.path, success: false, error: err as Error });
