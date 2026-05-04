@@ -160,6 +160,12 @@ export class FeishuCliBridge {
           return { success: false, error: 'Auth not ready', errorCode: 'AUTH_REQUIRED' };
         }
 
+        const grantedScopes = (authData?.scope || '').split(' ').filter(Boolean);
+        const missingScopes = REQUIRED_SCOPES.filter(s => !grantedScopes.includes(s));
+        if (missingScopes.length > 0) {
+          return { success: false, error: `Missing required scopes: ${missingScopes.join(', ')}`, errorCode: 'INSUFFICIENT_SCOPE' };
+        }
+
         return { success: true, cliVersion, authReady: true };
       } catch (err) {
         if (err instanceof CliNotFoundError) {

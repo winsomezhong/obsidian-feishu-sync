@@ -194,14 +194,17 @@ describe('FeishuCliBridge', () => {
   });
 
   describe('preflight', () => {
-    it('returns success when CLI is installed and authenticated', async () => {
+    it('returns success when CLI is installed and has all required scopes', async () => {
       mockExec
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
           cb(null, 'lark-cli/1.2.3\n', '');
           return mockChild();
         })
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, JSON.stringify({ tokenStatus: 'valid' }), '');
+          cb(null, JSON.stringify({
+            tokenStatus: 'valid',
+            scope: 'drive:file:upload drive:drive.metadata:readonly drive:file:download docx:document:readonly sheets:spreadsheet:read bitable:app:read',
+          }), '');
           return mockChild();
         });
       const bridge = new FeishuCliBridge();
@@ -243,6 +246,62 @@ describe('FeishuCliBridge', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errorCode).toBe('AUTH_REQUIRED');
+      }
+    });
+
+    it('returns failure when token valid but missing required scopes', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ tokenStatus: 'valid', scope: 'drive:file:upload drive:drive.metadata:readonly' }), '');
+          return mockChild();
+        });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
+        expect(result.error).toContain('Missing required scopes');
+        expect(result.error).toContain('docx:document:readonly');
+      }
+    });
+
+    it('returns failure when token valid but scope field is missing', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ tokenStatus: 'valid' }), '');
+          return mockChild();
+        });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
+      }
+    });
+
+    it('returns failure when token valid but scope is empty string', async () => {
+      mockExec
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, 'lark-cli/1.2.3\n', '');
+          return mockChild();
+        })
+        .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
+          cb(null, JSON.stringify({ tokenStatus: 'valid', scope: '' }), '');
+          return mockChild();
+        });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.preflight();
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
       }
     });
   });
