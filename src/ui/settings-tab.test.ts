@@ -263,6 +263,13 @@ describe('getAuthStatusDisplay', () => {
     expect(display.text).toBe('Check failed');
     expect(display.color).toBe('red');
   });
+
+  it('returns Insufficient scope when status is insufficient_scope', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'insufficient_scope' };
+    const display = getAuthStatusDisplay(settings);
+    expect(display.text).toBe('Insufficient scope');
+    expect(display.color).toBe('red');
+  });
 });
 
 describe('getAuthGuidanceText', () => {
@@ -300,6 +307,13 @@ describe('getAuthGuidanceText', () => {
     expect(text).toMatch(/install/i);
     expect(text).toContain('lark-cli');
   });
+
+  it('returns re-auth guide when insufficient_scope', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'insufficient_scope' };
+    const text = getAuthGuidanceText(settings);
+    expect(text).toContain('lark-cli auth login');
+    expect(text).toContain('re-authorize');
+  });
 });
 
 describe('i18n integration', () => {
@@ -336,6 +350,11 @@ describe('i18n integration', () => {
   it('getAuthStatusDisplay check-failed text matches authCheckFailed translation (en)', () => {
     const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'auth_check_failed' };
     expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authCheckFailed.en);
+  });
+
+  it('getAuthStatusDisplay insufficient-scope text matches authInsufficientScope translation (en)', () => {
+    const settings: SyncPluginSettings = { ...DEFAULT_SETTINGS, lastPreflightStatus: 'insufficient_scope' };
+    expect(getAuthStatusDisplay(settings).text).toBe(TRANSLATIONS.authInsufficientScope.en);
   });
 
   it('SyncPluginSettings language field accepts en and zh', () => {

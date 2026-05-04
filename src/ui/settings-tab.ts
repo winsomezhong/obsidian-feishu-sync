@@ -71,6 +71,8 @@ export function getAuthStatusDisplay(settings: SyncPluginSettings): AuthStatusDi
       return { text: 'Not authorized', color: 'red' };
     case 'cli_not_found':
       return { text: 'Checking...', color: 'gray' };
+    case 'insufficient_scope':
+      return { text: 'Insufficient scope', color: 'red' };
     default:
       return { text: 'Check failed', color: 'red' };
   }
@@ -83,6 +85,8 @@ export function getAuthGuidanceText(settings: SyncPluginSettings): string {
   switch (settings.lastPreflightStatus) {
     case 'auth_required':
       return 'Run \`lark-cli auth login\` in your terminal to authorize.';
+    case 'insufficient_scope':
+      return 'Insufficient scope. Run \`lark-cli auth login\` to re-authorize with the required scopes.';
     case 'cli_not_found':
       return 'Install lark-cli and ensure it is available in your PATH.';
     default:
