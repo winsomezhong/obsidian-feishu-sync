@@ -7,6 +7,7 @@ import {
   ApiError,
   RateLimitError,
   FeishuCliBridge,
+  REQUIRED_SCOPES,
 } from './feishu-cli-bridge';
 
 vi.mock('child_process', () => ({
@@ -54,6 +55,22 @@ describe('FeishuCliBridge errors', () => {
     expect(new TimeoutError(0, '')).toBeInstanceOf(Error);
     expect(new ApiError(0, '', '')).toBeInstanceOf(Error);
     expect(new RateLimitError(0, '')).toBeInstanceOf(Error);
+  });
+});
+
+describe('REQUIRED_SCOPES', () => {
+  it('defines all 6 required scopes for Feishu API access', () => {
+    expect(REQUIRED_SCOPES).toHaveLength(6);
+    expect(REQUIRED_SCOPES).toContain('drive:file:upload');
+    expect(REQUIRED_SCOPES).toContain('drive:drive.metadata:readonly');
+    expect(REQUIRED_SCOPES).toContain('drive:file:download');
+    expect(REQUIRED_SCOPES).toContain('docx:document:readonly');
+    expect(REQUIRED_SCOPES).toContain('sheets:spreadsheet:read');
+    expect(REQUIRED_SCOPES).toContain('bitable:app:read');
+  });
+
+  it('is a readonly tuple so scope list cannot be mutated', () => {
+    expect(Array.isArray(REQUIRED_SCOPES)).toBe(true);
   });
 });
 

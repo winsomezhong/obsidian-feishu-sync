@@ -74,6 +74,15 @@ const DEFAULT_CONFIG: CliBridgeConfig = {
   cliPath: 'lark-cli',
 };
 
+export const REQUIRED_SCOPES = [
+  'drive:file:upload',
+  'drive:drive.metadata:readonly',
+  'drive:file:download',
+  'docx:document:readonly',
+  'sheets:spreadsheet:read',
+  'bitable:app:read',
+] as const;
+
 export class FeishuCliBridge {
   constructor(private config: CliBridgeConfig = DEFAULT_CONFIG) {
     if (!this.config.cliPath) this.config.cliPath = DEFAULT_CONFIG.cliPath;
