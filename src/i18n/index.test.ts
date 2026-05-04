@@ -37,6 +37,8 @@ describe('TRANSLATIONS', () => {
     'discoverNewFilesDesc',
     'syncDeletesToLocal',
     'syncDeletesToLocalDesc',
+    'authInsufficientScope',
+    'authMissingScopes',
   ];
 
   it('has all required translation keys', () => {

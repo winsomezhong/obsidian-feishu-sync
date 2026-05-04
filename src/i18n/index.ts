@@ -139,6 +139,14 @@ const translations: Record<string, Record<Locale, string>> = {
     en: 'Delete local files when they are deleted on Feishu Drive',
     zh: '飞书云盘文件删除时同步删除本地文件',
   },
+  authInsufficientScope: {
+    en: 'Insufficient scope',
+    zh: '权限不足',
+  },
+  authMissingScopes: {
+    en: 'Missing scopes: {scopes}. Run `lark-cli auth login` to re-authorize.',
+    zh: '缺少权限：{scopes}。请运行 `lark-cli auth login` 重新授权。',
+  },
 };
 
 export const TRANSLATIONS = translations;
