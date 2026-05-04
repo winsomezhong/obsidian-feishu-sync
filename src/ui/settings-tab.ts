@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
   language: 'en',
   pullEnabled: true,
   pullIntervalMinutes: 10,
-  discoverNewFiles: false,
+  discoverNewFiles: true,
   syncDeletesToLocal: false,
 };
 

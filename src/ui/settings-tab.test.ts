@@ -187,8 +187,8 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.pullIntervalMinutes).toBe(10);
   });
 
-  it('discoverNewFiles defaults to false', () => {
-    expect(DEFAULT_SETTINGS.discoverNewFiles).toBe(false);
+  it('discoverNewFiles defaults to true', () => {
+    expect(DEFAULT_SETTINGS.discoverNewFiles).toBe(true);
   });
 
   it('syncDeletesToLocal defaults to false', () => {
