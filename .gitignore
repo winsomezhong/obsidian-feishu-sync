@@ -12,3 +12,5 @@ main.js
 /*.bak
 /CLAUDE.md
 /docs
+/.obsidian
+/configs/wsl-settings.json
