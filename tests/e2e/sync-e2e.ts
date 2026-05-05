@@ -2,6 +2,9 @@
 import { e2eConfig } from './e2e.config';
 import * as obsidian from './obsidian-cli';
 import * as feishu from './feishu-verifier';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const TEST_PREFIX = e2eConfig.testPrefix; // "raw/"
 const FOLDER_PATH = e2eConfig.folderPath;
@@ -279,6 +282,108 @@ async function main(): Promise<void> {
     await ensureCleanState(FILE);
     await sleep(WAIT);
   });
+
+  // Set short pull interval for the pull tests (S8, S9)
+  const originalInterval = obsidian.setShortPullInterval();
+  obsidian.reloadPlugin();
+  console.log(`Pull interval: ${originalInterval} → 1 min for E2E pull tests`);
+
+  // Scenario 8: Pull .md file from Drive subfolder
+  await runTest('S8: Pull .md file from Drive subfolder', async () => {
+    const SUBFOLDER = 'e2e-pull-sub';
+    const FILE_NAME = 's8-pulled.md';
+    const LOCAL_PATH = `${SUBFOLDER}/${FILE_NAME}`;
+    const CONTENT = '# Pulled from Feishu subdirectory';
+
+    await ensureCleanState(LOCAL_PATH);
+
+    // Ensure subfolder exists on Drive
+    let subToken = feishu.findSubfolder(rootToken, SUBFOLDER);
+    if (!subToken) {
+      subToken = feishu.createFolder(rootToken, SUBFOLDER);
+      console.log(`Created subfolder "${SUBFOLDER}": ${subToken}`);
+    }
+
+    // Upload a file directly to the Drive subfolder (bypassing Obsidian)
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-upload-'));
+    const tmpFile = path.join(tmpDir, FILE_NAME);
+    fs.writeFileSync(tmpFile, CONTENT, 'utf-8');
+    try {
+      const fileToken = feishu.uploadFile(tmpFile, subToken);
+      console.log(`Uploaded to Drive subfolder: token=${fileToken}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+
+    // Wait for pull interval to discover and download the file
+    // pullInterval minimum is 60s; add buffer for API latency
+    await poll(
+      () => obsidian.fileExists(LOCAL_PATH),
+      120000,
+      5000,
+      `File "${LOCAL_PATH}" not pulled from Drive subfolder`,
+    );
+
+    // Verify content was pulled correctly
+    const content = obsidian.readFile({ file: LOCAL_PATH });
+    assert(content.includes('Pulled from Feishu subdirectory'), 'content matches uploaded file');
+
+    await ensureCleanState(LOCAL_PATH);
+    // Clean up the empty subfolder on Drive
+    try { feishu.deleteFileByToken(subToken); } catch {}
+  });
+
+  // Scenario 9: Pull online docx from Drive subfolder
+  await runTest('S9: Pull online docx from Drive subfolder', async () => {
+    const SUBFOLDER = 'e2e-pull-sub';
+    const DOCX_CONTENT = '# E2E Online Doc';
+
+    // Ensure subfolder exists on Drive
+    let subToken = feishu.findSubfolder(rootToken, SUBFOLDER);
+    if (!subToken) {
+      subToken = feishu.createFolder(rootToken, SUBFOLDER);
+    }
+
+    // Create a docx directly on Drive via lark-cli
+    let docxToken: string;
+    try {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-docx-'));
+      const tmpFile = path.join(tmpDir, 'docx-content.md');
+      fs.writeFileSync(tmpFile, DOCX_CONTENT, 'utf-8');
+      try {
+        docxToken = feishu.importDocx(tmpFile, subToken);
+        console.log(`Created docx in subfolder: token=${docxToken}`);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (err: any) {
+      console.log(`Skipping S9: cannot create docx via CLI — ${err.message}`);
+      return;
+    }
+
+    // Docx pull creates {token}.md under the subfolder path
+    const expectedLocalPath = `${SUBFOLDER}/${docxToken}.md`;
+
+    // Wait for pull to discover and convert the docx
+    await poll(
+      () => obsidian.fileExists(expectedLocalPath),
+      120000,
+      5000,
+      `Online doc not pulled to "${expectedLocalPath}"`,
+    );
+
+    const content = obsidian.readFile({ file: expectedLocalPath });
+    assert(content.includes('feishu_doc_token'), 'frontmatter with doc token present');
+    assert(content.includes('feishu_doc_type'), 'frontmatter with doc type present');
+
+    // Clean up: delete local file and Drive file
+    await ensureCleanState(expectedLocalPath);
+  });
+
+  // Restore original pull interval
+  obsidian.restorePullInterval(originalInterval);
+  obsidian.reloadPlugin();
+  console.log(`Pull interval restored to ${originalInterval} min`);
 
   console.log('\n=== E2E Complete ===');
 }

@@ -1,4 +1,4 @@
-import { Plugin, Notice, TFile } from 'obsidian';
+import { Plugin, Notice, TFile, TFolder } from 'obsidian';
 import type { FeishuCliBridge } from '../bridge/feishu-cli-bridge';
 import type { SyncStatusTracker, FileSyncState } from './sync-status-tracker';
 import type { ConflictResolver } from './conflict-resolver';
@@ -27,7 +27,7 @@ export class PullService {
 
   constructor(
     private plugin: Plugin,
-    private bridge: Pick<FeishuCliBridge, 'listRemoteFiles' | 'downloadFile' | 'exportDoc' | 'uploadFile'>,
+    private bridge: Pick<FeishuCliBridge, 'listRemoteFiles' | 'listAllFilesRecursive' | 'downloadFile' | 'exportDoc' | 'uploadFile'>,
     private tracker: Pick<SyncStatusTracker, 'getFileState' | 'updateFileState' | 'removeFileState' | 'getAllFiles'>,
     private resolver: Pick<ConflictResolver, 'resolveBidirectional'>,
     private converter: OnlineDocConverter,
@@ -62,7 +62,7 @@ export class PullService {
 
     let remoteFiles: RemoteFile[];
     try {
-      remoteFiles = await this.bridge.listRemoteFiles(folderToken);
+      remoteFiles = await this.bridge.listAllFilesRecursive(folderToken);
     } catch (err) {
       result.errors.push({ path: '(list)', error: (err as Error).message });
       result.failCount++;
@@ -81,6 +81,8 @@ export class PullService {
     // Sync deletes: remove local files that are tracked but no longer exist remotely
     if (settings.syncDeletesToLocal) {
       const remoteTokens = new Set(remoteFiles.map(f => f.token));
+      const parentDirs = new Set<string>();
+
       for (const tracked of this.tracker.getAllFiles()) {
         if (!remoteTokens.has(tracked.feishuFileToken)) {
           try {
@@ -88,12 +90,35 @@ export class PullService {
             const existing = vault.getAbstractFileByPath(tracked.localPath);
             if (existing instanceof TFile) {
               await vault.delete(existing);
+              const parentDir = tracked.localPath.split('/').slice(0, -1).join('/');
+              if (parentDir) parentDirs.add(parentDir);
             }
             this.tracker.removeFileState(tracked.localPath);
           } catch (err) {
             result.errors.push({ path: tracked.localPath, error: (err as Error).message });
             result.failCount++;
           }
+        }
+      }
+
+      // Clean up empty parent folders bottom-up
+      const sortedDirs = [...parentDirs].sort(
+        (a, b) => b.split('/').length - a.split('/').length,
+      );
+      for (const dirPath of sortedDirs) {
+        try {
+          const vault = this.plugin.app.vault;
+          let currentPath: string | null = dirPath;
+          while (currentPath) {
+            const folder = vault.getAbstractFileByPath(currentPath);
+            if (!(folder instanceof TFolder) || folder.children.length > 0) break;
+            await vault.delete(folder, true);
+            const parts: string[] = currentPath.split('/');
+            parts.pop();
+            currentPath = parts.length > 0 ? parts.join('/') : null;
+          }
+        } catch {
+          // folder may have been cleaned up by parent deletion; ignore
         }
       }
     }
@@ -106,7 +131,7 @@ export class PullService {
     if (!folderToken) return { success: false, error: 'No folder token configured' };
 
     try {
-      const remoteFiles = await this.bridge.listRemoteFiles(folderToken);
+      const remoteFiles = await this.bridge.listAllFilesRecursive(folderToken);
       const file = remoteFiles.find(f => f.token === fileToken);
       if (!file) return { success: false, error: `File not found: ${fileToken}` };
 
@@ -135,7 +160,8 @@ export class PullService {
     // For regular files, only process .md files
     if (!isOnlineDoc && !file.name.endsWith('.md')) return;
 
-    const localFileName = isOnlineDoc ? `${file.token}.md` : file.name;
+    const prefix = file.path ? `${file.path}/` : '';
+    const localFileName = isOnlineDoc ? `${prefix}${file.name}.md` : `${prefix}${file.name}`;
 
     const state = this.tracker.getFileState(localFileName);
 
@@ -201,9 +227,18 @@ export class PullService {
     localFileName: string,
     result: PullBatchResult,
   ): Promise<void> {
+    // Ensure parent directory exists before download
+    const dirPath = localFileName.split('/').slice(0, -1).join('/');
+    if (dirPath) {
+      try {
+        await this.plugin.app.vault.createFolder(dirPath);
+      } catch {
+        // folder may already exist
+      }
+    }
+
     const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
-    const localPath = `${vaultBasePath}/${localFileName}`;
-    await this.bridge.downloadFile(file.token, localPath);
+    await this.bridge.downloadFile(file.token, localFileName, vaultBasePath);
 
     this.tracker.updateFileState(localFileName, file.token, Date.now(), {
       isOnlineDoc: false,

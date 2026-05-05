@@ -21,4 +21,5 @@ export interface RemoteFile {
   name: string;
   type: 'file' | 'docx' | 'sheet' | 'bitable' | 'folder';
   modifiedAt: string;
+  path?: string;
 }

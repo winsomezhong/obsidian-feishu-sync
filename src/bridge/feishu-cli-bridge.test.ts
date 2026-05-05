@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import {
   CliNotFoundError,
   AuthRequiredError,
@@ -61,7 +64,7 @@ describe('FeishuCliBridge errors', () => {
 
 describe('REQUIRED_SCOPES', () => {
   it('defines all 7 required scopes for Feishu API access', () => {
-    expect(REQUIRED_SCOPES).toHaveLength(7);
+    expect(REQUIRED_SCOPES).toHaveLength(8);
     expect(REQUIRED_SCOPES).toContain('drive:file:upload');
     expect(REQUIRED_SCOPES).toContain('drive:drive.metadata:readonly');
     expect(REQUIRED_SCOPES).toContain('drive:file:download');
@@ -78,7 +81,7 @@ describe('REQUIRED_SCOPES', () => {
 
 describe('SCOPE_DOMAIN_MAP', () => {
   it('maps all 7 required scopes to their business domains', () => {
-    expect(Object.keys(SCOPE_DOMAIN_MAP)).toHaveLength(7);
+    expect(Object.keys(SCOPE_DOMAIN_MAP)).toHaveLength(8);
     expect(SCOPE_DOMAIN_MAP['drive:file:upload']).toBe('drive');
     expect(SCOPE_DOMAIN_MAP['drive:drive.metadata:readonly']).toBe('drive');
     expect(SCOPE_DOMAIN_MAP['drive:file:download']).toBe('drive');
@@ -224,7 +227,7 @@ describe('FeishuCliBridge', () => {
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
           cb(null, JSON.stringify({
             tokenStatus: 'valid',
-            scope: 'drive:file:upload drive:drive.metadata:readonly drive:file:download docx:document:readonly sheets:spreadsheet:read base:app:read search:docs:read',
+            scope: 'drive:file:upload drive:drive.metadata:readonly drive:file:download docx:document:readonly sheets:spreadsheet:read base:app:read search:docs:read space:document:retrieve',
           }), '');
           return mockChild();
         });
@@ -288,12 +291,13 @@ describe('FeishuCliBridge', () => {
         expect(result.error).toContain('Missing required scopes');
         expect(result.error).toContain('docx:document:readonly');
         expect(result.missingScopes).toBeDefined();
-        expect(result.missingScopes!.length).toBe(5);
+        expect(result.missingScopes!.length).toBe(6);
         expect(result.missingScopes).toContain('docx:document:readonly');
         expect(result.missingScopes).toContain('sheets:spreadsheet:read');
         expect(result.missingScopes).toContain('base:app:read');
         expect(result.missingScopes).toContain('drive:file:download');
         expect(result.missingScopes).toContain('search:docs:read');
+        expect(result.missingScopes).toContain('space:document:retrieve');
       }
     });
 
@@ -313,14 +317,14 @@ describe('FeishuCliBridge', () => {
       if (!result.success) {
         expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
         expect(result.missingScopes).toBeDefined();
-        expect(result.missingScopes!.length).toBe(7);
+        expect(result.missingScopes!.length).toBe(8);
       }
     });
 
     it('returns failure when token valid but scope is empty string', async () => {
       mockExec
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
-          cb(null, 'lark-cli/1.2.3\n', '');
+          cb(null, JSON.stringify({ tokenStatus: 'valid', scope: '' }), '');
           return mockChild();
         })
         .mockImplementationOnce((cmd: string, opts: any, cb: Function) => {
@@ -333,7 +337,7 @@ describe('FeishuCliBridge', () => {
       if (!result.success) {
         expect(result.errorCode).toBe('INSUFFICIENT_SCOPE');
         expect(result.missingScopes).toBeDefined();
-        expect(result.missingScopes!.length).toBe(7);
+        expect(result.missingScopes!.length).toBe(8);
       }
     });
   });
@@ -468,6 +472,48 @@ describe('FeishuCliBridge', () => {
       expect(usedCommand).toContain('--type file');
       expect(usedCommand).toContain('--yes');
     });
+
+  });
+
+  describe('deleteFolder', () => {
+    it('resolves without error on success', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await expect(bridge.deleteFolder('fld123')).resolves.not.toThrow();
+    });
+
+    it('constructs correct command with folder type', async () => {
+      let usedCommand = '';
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        usedCommand = cmd;
+        cb(null, '{}', '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      await bridge.deleteFolder('fld456');
+      expect(usedCommand).toContain('drive +delete');
+      expect(usedCommand).toContain('--file-token "fld456"');
+      expect(usedCommand).toContain('--type folder');
+      expect(usedCommand).toContain('--yes');
+    });
+
+    it('throws ApiError when delete fails', async () => {
+      vi.useFakeTimers();
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(new Error('failed'), '', JSON.stringify({ code: 1061007, msg: 'folder not found' }));
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const resultPromise = bridge.deleteFolder('fld_bad');
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(10000);
+      await vi.advanceTimersByTimeAsync(30000);
+      await expect(resultPromise).rejects.toThrow(ApiError);
+      vi.useRealTimers();
+    });
   });
 
   describe('moveFile', () => {
@@ -537,8 +583,8 @@ describe('FeishuCliBridge', () => {
         cb(null, JSON.stringify({
           data: {
             files: [
-              { name: 'note.md', token: 'ftok1', type: 'file', modified_at: '2026-05-04T10:00:00Z' },
-              { name: 'doc', token: 'ftok2', type: 'docx', modified_at: '2026-05-04T11:00:00Z' },
+              { name: 'note.md', token: 'ftok1', type: 'file', modified_time: '2026-05-04T10:00:00Z' },
+              { name: 'doc', token: 'ftok2', type: 'docx', modified_time: '2026-05-04T11:00:00Z' },
             ],
           },
         }), '');
@@ -595,7 +641,7 @@ describe('FeishuCliBridge', () => {
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         cb(null, JSON.stringify({
           data: {
-            file: { name: 'test.md', token: 'ftok999', type: 'file', modified_at: '2026-05-04T12:00:00Z' },
+            file: { name: 'test.md', token: 'ftok999', type: 'file', modified_time: '2026-05-04T12:00:00Z' },
           },
         }), '');
         return mockChild();
@@ -640,33 +686,192 @@ describe('FeishuCliBridge', () => {
       expect(usedCommand).toContain('drive +download');
       expect(usedCommand).toContain('--file-token "ftok555"');
       expect(usedCommand).toContain('--output "/tmp/output.md"');
+      expect(usedCommand).toContain('--overwrite');
+    });
+  });
+
+  describe('listAllFilesRecursive', () => {
+    it('returns flat file list from root folder with no subfolders', async () => {
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        cb(null, JSON.stringify({
+          data: {
+            files: [
+              { name: 'note.md', token: 'ftok1', type: 'file', modified_time: '2026-05-04T10:00:00Z' },
+              { name: 'doc', token: 'ftok2', type: 'docx', modified_time: '2026-05-04T11:00:00Z' },
+            ],
+          },
+        }), '');
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listAllFilesRecursive('rootFld');
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('note.md');
+      expect(result[0].path).toBeUndefined();
+      expect(result[1].name).toBe('doc');
+      expect(result[1].type).toBe('docx');
+    });
+
+    it('traverses a single level of subfolders', async () => {
+      let callCount = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        callCount++;
+        if (callCount === 1) {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'root.md', token: 'ftok_root', type: 'file', modified_time: '2026-05-04T10:00:00Z' },
+                { name: 'subdir', token: 'fld_sub', type: 'folder', modified_time: '2026-05-04T09:00:00Z' },
+              ],
+            },
+          }), '');
+        } else {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'nested.md', token: 'ftok_nested', type: 'file', modified_time: '2026-05-04T11:00:00Z' },
+              ],
+            },
+          }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listAllFilesRecursive('rootFld');
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('root.md');
+      expect(result[0].path).toBeUndefined();
+      expect(result[1].name).toBe('nested.md');
+      expect(result[1].path).toBe('subdir');
+    });
+
+    it('traverses deeply nested subfolders', async () => {
+      let callCount = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        callCount++;
+        if (callCount === 1) {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'level1', token: 'fld_l1', type: 'folder', modified_time: '2026-05-04T09:00:00Z' },
+              ],
+            },
+          }), '');
+        } else if (callCount === 2) {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'level2', token: 'fld_l2', type: 'folder', modified_time: '2026-05-04T09:00:00Z' },
+              ],
+            },
+          }), '');
+        } else {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'deep.md', token: 'ftok_deep', type: 'file', modified_time: '2026-05-04T11:00:00Z' },
+              ],
+            },
+          }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listAllFilesRecursive('rootFld');
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('deep.md');
+      expect(result[0].path).toBe('level1/level2');
+    });
+
+    it('skips empty subfolders', async () => {
+      let callCount = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        callCount++;
+        if (callCount === 1) {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'top.md', token: 'ftok_top', type: 'file', modified_time: '2026-05-04T10:00:00Z' },
+                { name: 'emptyDir', token: 'fld_empty', type: 'folder', modified_time: '2026-05-04T09:00:00Z' },
+              ],
+            },
+          }), '');
+        } else {
+          cb(null, JSON.stringify({ data: { files: [] } }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listAllFilesRecursive('rootFld');
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('top.md');
+    });
+
+    it('handles mixed online docs and regular files in subfolders', async () => {
+      let callCount = 0;
+      mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
+        callCount++;
+        if (callCount === 1) {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: '_e2etest', token: 'fld_e2e', type: 'folder', modified_time: '2026-05-04T09:00:00Z' },
+              ],
+            },
+          }), '');
+        } else {
+          cb(null, JSON.stringify({
+            data: {
+              files: [
+                { name: 'testonlinedoc', token: 'docx_123', type: 'docx', modified_time: '2026-05-04T12:00:00Z' },
+                { name: 'note.md', token: 'ftok_note', type: 'file', modified_time: '2026-05-04T13:00:00Z' },
+              ],
+            },
+          }), '');
+        }
+        return mockChild();
+      });
+      const bridge = new FeishuCliBridge();
+      const result = await bridge.listAllFilesRecursive('rootFld');
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('testonlinedoc');
+      expect(result[0].type).toBe('docx');
+      expect(result[0].path).toBe('_e2etest');
+      expect(result[1].name).toBe('note.md');
+      expect(result[1].path).toBe('_e2etest');
     });
   });
 
   describe('exportDoc', () => {
-    it('returns markdown content from export command', async () => {
+    it('exports to temp dir and reads saved file content', async () => {
+      const mockReadFileSync = vi.spyOn(fs, 'readFileSync').mockReturnValue('# Exported content');
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
-        cb(null, '# Exported\n\nHello world', '');
+        cb(null, JSON.stringify({
+          data: { saved_path: '/tmp/feishu-export-XXXX/test.md', file_name: 'test.md' },
+        }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
       const result = await bridge.exportDoc('docToken', 'docx');
-      expect(result).toBe('# Exported\n\nHello world');
+      expect(result).toBe('# Exported content');
+      mockReadFileSync.mockRestore();
     });
 
-    it('constructs correct command', async () => {
+    it('constructs correct command with fixed CLI flags', async () => {
       let usedCommand = '';
+      const mockReadFileSync = vi.spyOn(fs, 'readFileSync').mockReturnValue('');
       mockExec.mockImplementation((cmd: string, opts: any, cb: Function) => {
         usedCommand = cmd;
-        cb(null, '# Exported', '');
+        cb(null, JSON.stringify({ data: { saved_path: '/tmp/test.md', file_name: 'test.md' } }), '');
         return mockChild();
       });
       const bridge = new FeishuCliBridge();
       await bridge.exportDoc('docTokenABC', 'sheet');
       expect(usedCommand).toContain('drive +export');
-      expect(usedCommand).toContain('--file-token "docTokenABC"');
+      expect(usedCommand).toContain('--token "docTokenABC"');
       expect(usedCommand).toContain('--doc-type "sheet"');
-      expect(usedCommand).toContain('--output-format "md"');
+      expect(usedCommand).toContain('--file-extension "markdown"');
+      mockReadFileSync.mockRestore();
     });
   });
 });

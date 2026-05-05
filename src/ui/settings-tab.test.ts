@@ -187,8 +187,8 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.pullIntervalMinutes).toBe(10);
   });
 
-  it('discoverNewFiles defaults to false', () => {
-    expect(DEFAULT_SETTINGS.discoverNewFiles).toBe(false);
+  it('discoverNewFiles defaults to true', () => {
+    expect(DEFAULT_SETTINGS.discoverNewFiles).toBe(true);
   });
 
   it('syncDeletesToLocal defaults to false', () => {
@@ -596,13 +596,13 @@ describe('SyncSettingsTab - Language selector', () => {
     expect(folderIdx).toBeGreaterThan(langIdx);
   });
 
-  it('language selector appears after auth status setting', () => {
+  it('language selector appears before auth status setting', () => {
     const { containerEl } = createTab({});
     const names = findSettingNames(containerEl);
     const authIdx = names.findIndex(n => n === 'Feishu CLI auth status');
     const langIdx = names.findIndex(n => n === 'Language');
-    expect(authIdx).toBeGreaterThanOrEqual(0);
-    expect(langIdx).toBeGreaterThan(authIdx);
+    expect(langIdx).toBeGreaterThanOrEqual(0);
+    expect(authIdx).toBeGreaterThan(langIdx);
   });
 });
 

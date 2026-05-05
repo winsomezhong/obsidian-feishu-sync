@@ -37,6 +37,20 @@ export class TFile {
   }
 }
 
+export class TFolder {
+  path: string;
+  name: string;
+  children: any[];
+  parent: TFolder | null;
+
+  constructor() {
+    this.path = '';
+    this.name = '';
+    this.children = [];
+    this.parent = null;
+  }
+}
+
 export class App {
   vault: Vault;
   workspace: { getActiveFile: () => TFile | null };
@@ -147,4 +161,6 @@ class Vault {
   read: (file: TFile) => Promise<string> = async () => '';
   getMarkdownFiles: () => TFile[] = () => {};
   configDir: string = '.obsidian';
+  delete: (file: TFile | TFolder, force?: boolean) => Promise<void> = async () => {};
+  getAbstractFileByPath: (path: string) => TFile | TFolder | null = () => null;
 }

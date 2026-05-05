@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS: SyncPluginSettings = {
   language: 'en',
   pullEnabled: true,
   pullIntervalMinutes: 10,
-  discoverNewFiles: false,
+  discoverNewFiles: true,
   syncDeletesToLocal: false,
 };
 
@@ -182,6 +182,21 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: t('settingsTitle', lang) });
 
+    // Language selector
+    new Setting(containerEl)
+      .setName(t('language', lang))
+      .setDesc(t('languageDesc', lang))
+      .addDropdown(dropdown => dropdown
+        .addOption('en', 'English')
+        .addOption('zh', '中文')
+        .setValue(this.plugin.settings?.language || 'en')
+        .onChange(async value => {
+          this.plugin.settings.language = value as Locale;
+          await this.plugin.saveData(this.plugin.settings);
+          this.onSettingsChange(this.plugin.settings);
+          this.display();
+        }));
+
     // CLI status display section
     const cliStatusSetting = new Setting(containerEl)
       .setName(t('cliInstallStatus', lang))
@@ -234,21 +249,6 @@ export class SyncSettingsTab extends PluginSettingTab {
           });
         });
     }
-
-    // Language selector: placed after Refresh button, before Folder path
-    new Setting(containerEl)
-      .setName(t('language', lang))
-      .setDesc(t('languageDesc', lang))
-      .addDropdown(dropdown => dropdown
-        .addOption('en', 'English')
-        .addOption('zh', '中文')
-        .setValue(this.plugin.settings?.language || 'en')
-        .onChange(async value => {
-          this.plugin.settings.language = value as Locale;
-          await this.plugin.saveData(this.plugin.settings);
-          this.onSettingsChange(this.plugin.settings);
-          this.display();
-        }));
 
     const folderPathSetting = new Setting(containerEl)
       .setName(t('folderPath', lang))
