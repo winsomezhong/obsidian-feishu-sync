@@ -596,13 +596,13 @@ describe('SyncSettingsTab - Language selector', () => {
     expect(folderIdx).toBeGreaterThan(langIdx);
   });
 
-  it('language selector appears after auth status setting', () => {
+  it('language selector appears before auth status setting', () => {
     const { containerEl } = createTab({});
     const names = findSettingNames(containerEl);
     const authIdx = names.findIndex(n => n === 'Feishu CLI auth status');
     const langIdx = names.findIndex(n => n === 'Language');
-    expect(authIdx).toBeGreaterThanOrEqual(0);
-    expect(langIdx).toBeGreaterThan(authIdx);
+    expect(langIdx).toBeGreaterThanOrEqual(0);
+    expect(authIdx).toBeGreaterThan(langIdx);
   });
 });
 
