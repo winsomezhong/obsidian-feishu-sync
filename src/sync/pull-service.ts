@@ -1,4 +1,4 @@
-import { Plugin, Notice, TFile } from 'obsidian';
+import { Plugin, Notice, TFile, TFolder } from 'obsidian';
 import type { FeishuCliBridge } from '../bridge/feishu-cli-bridge';
 import type { SyncStatusTracker, FileSyncState } from './sync-status-tracker';
 import type { ConflictResolver } from './conflict-resolver';
@@ -81,6 +81,8 @@ export class PullService {
     // Sync deletes: remove local files that are tracked but no longer exist remotely
     if (settings.syncDeletesToLocal) {
       const remoteTokens = new Set(remoteFiles.map(f => f.token));
+      const parentDirs = new Set<string>();
+
       for (const tracked of this.tracker.getAllFiles()) {
         if (!remoteTokens.has(tracked.feishuFileToken)) {
           try {
@@ -88,12 +90,35 @@ export class PullService {
             const existing = vault.getAbstractFileByPath(tracked.localPath);
             if (existing instanceof TFile) {
               await vault.delete(existing);
+              const parentDir = tracked.localPath.split('/').slice(0, -1).join('/');
+              if (parentDir) parentDirs.add(parentDir);
             }
             this.tracker.removeFileState(tracked.localPath);
           } catch (err) {
             result.errors.push({ path: tracked.localPath, error: (err as Error).message });
             result.failCount++;
           }
+        }
+      }
+
+      // Clean up empty parent folders bottom-up
+      const sortedDirs = [...parentDirs].sort(
+        (a, b) => b.split('/').length - a.split('/').length,
+      );
+      for (const dirPath of sortedDirs) {
+        try {
+          const vault = this.plugin.app.vault;
+          let currentPath: string | null = dirPath;
+          while (currentPath) {
+            const folder = vault.getAbstractFileByPath(currentPath);
+            if (!(folder instanceof TFolder) || folder.children.length > 0) break;
+            await vault.delete(folder, true);
+            const parts: string[] = currentPath.split('/');
+            parts.pop();
+            currentPath = parts.length > 0 ? parts.join('/') : null;
+          }
+        } catch {
+          // folder may have been cleaned up by parent deletion; ignore
         }
       }
     }

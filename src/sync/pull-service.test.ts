@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TFile } from 'obsidian';
+import { TFile, TFolder } from 'obsidian';
 import { PullService } from './pull-service';
 import type { FeishuCliBridge } from '../bridge/feishu-cli-bridge';
 import type { SyncStatusTracker, FileSyncState } from './sync-status-tracker';
@@ -295,6 +295,129 @@ describe('PullService', () => {
       await service.pullAll();
       // For regular file pull, downloadFile is used (not vault.modify)
       expect(mockBridge.downloadFile).toHaveBeenCalled();
+    });
+  });
+
+  describe('syncDeletesToLocal - folder cleanup', () => {
+    it('deletes empty parent folder after removing tracked file', async () => {
+      settings.syncDeletesToLocal = true;
+      const trackedFiles = [
+        {
+          localPath: 'deep/folder/note.md', feishuFileToken: 'deleted_tok',
+          lastSyncedAt: 1000, lastLocalMtime: 1000, isOnlineDoc: false,
+        },
+      ];
+      // Remote does NOT include deleted_tok
+      const remoteFiles: RemoteFile[] = [
+        { token: 'other_tok', name: 'survivor.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(remoteFiles);
+      mockTracker.getAllFiles = vi.fn().mockReturnValue(trackedFiles);
+
+      const tfile = { path: 'deep/folder/note.md' };
+      Object.setPrototypeOf(tfile, TFile.prototype);
+
+      // Empty folder (post-deletion): no children
+      const folder = { path: 'deep/folder', children: [] };
+      Object.setPrototypeOf(folder, TFolder.prototype);
+      const parentFolder = { path: 'deep', children: [] };
+      Object.setPrototypeOf(parentFolder, TFolder.prototype);
+
+      mockPlugin.app.vault.getAbstractFileByPath = vi.fn((path: string) => {
+        if (path === 'deep/folder/note.md') return tfile;
+        if (path === 'deep/folder') return folder;
+        if (path === 'deep') return parentFolder;
+        return null;
+      });
+
+      await service.pullAll();
+
+      // Should delete the tracked file
+      expect(mockPlugin.app.vault.delete).toHaveBeenCalledWith(tfile);
+      // Should delete the empty parent folder
+      expect(mockPlugin.app.vault.delete).toHaveBeenCalledWith(folder, true);
+      // Should delete the empty grandparent too (all empty)
+      expect(mockPlugin.app.vault.delete).toHaveBeenCalledWith(parentFolder, true);
+    });
+
+    it('does NOT delete parent folder when it still has other files', async () => {
+      settings.syncDeletesToLocal = true;
+      const trackedFiles = [
+        {
+          localPath: 'deep/folder/note.md', feishuFileToken: 'deleted_tok',
+          lastSyncedAt: 1000, lastLocalMtime: 1000, isOnlineDoc: false,
+        },
+        {
+          localPath: 'deep/other.md', feishuFileToken: 'survivor_tok',
+          lastSyncedAt: 1000, lastLocalMtime: 1000, isOnlineDoc: false,
+        },
+      ];
+      // Remote has survivor_tok but NOT deleted_tok
+      const remoteFiles: RemoteFile[] = [
+        { token: 'survivor_tok', name: 'other.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z', path: 'deep' },
+        { token: 'existing1', name: 'note.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(remoteFiles);
+      mockTracker.getAllFiles = vi.fn().mockReturnValue(trackedFiles);
+
+      const tfileDeleted = { path: 'deep/folder/note.md' };
+      Object.setPrototypeOf(tfileDeleted, TFile.prototype);
+      const tfileSurvivor = { path: 'deep/other.md' };
+      Object.setPrototypeOf(tfileSurvivor, TFile.prototype);
+
+      // deep/folder is empty (the only child note.md is deleted)
+      const folder = { path: 'deep/folder', children: [] };
+      Object.setPrototypeOf(folder, TFolder.prototype);
+      // deep still has other.md as a child
+      const parentFolder = { path: 'deep', children: [tfileSurvivor] };
+      Object.setPrototypeOf(parentFolder, TFolder.prototype);
+
+      mockPlugin.app.vault.getAbstractFileByPath = vi.fn((path: string) => {
+        if (path === 'deep/folder/note.md') return tfileDeleted;
+        if (path === 'deep/other.md') return tfileSurvivor;
+        if (path === 'deep/folder') return folder;
+        if (path === 'deep') return parentFolder;
+        return null;
+      });
+
+      await service.pullAll();
+
+      // Should delete the tracked file
+      expect(mockPlugin.app.vault.delete).toHaveBeenCalledWith(tfileDeleted);
+      // Should delete the empty folder deep/folder
+      expect(mockPlugin.app.vault.delete).toHaveBeenCalledWith(folder, true);
+      // Should NOT delete deep since it still has other.md
+      expect(mockPlugin.app.vault.delete).not.toHaveBeenCalledWith(parentFolder, true);
+      // Should NOT delete the surviving file
+      expect(mockPlugin.app.vault.delete).not.toHaveBeenCalledWith(tfileSurvivor);
+    });
+
+    it('skips folder cleanup when syncDeletesToLocal is false', async () => {
+      settings.syncDeletesToLocal = false;
+      const trackedFiles = [
+        {
+          localPath: 'deep/folder/note.md', feishuFileToken: 'deleted_tok',
+          lastSyncedAt: 1000, lastLocalMtime: 1000, isOnlineDoc: false,
+        },
+      ];
+      const remoteFiles: RemoteFile[] = [
+        { token: 'other_tok', name: 'other.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(remoteFiles);
+      mockTracker.getAllFiles = vi.fn().mockReturnValue(trackedFiles);
+
+      const tfile = { path: 'deep/folder/note.md' };
+      Object.setPrototypeOf(tfile, TFile.prototype);
+
+      mockPlugin.app.vault.getAbstractFileByPath = vi.fn((path: string) => {
+        if (path === 'deep/folder/note.md') return tfile;
+        return null;
+      });
+
+      await service.pullAll();
+
+      // Should NOT delete any files since syncDeletesToLocal is false
+      expect(mockPlugin.app.vault.delete).not.toHaveBeenCalled();
     });
   });
 
