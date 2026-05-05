@@ -14,6 +14,7 @@ function createMockPlugin() {
     },
     read: vi.fn().mockResolvedValue('# Existing content'),
     create: vi.fn().mockResolvedValue(null),
+    createFolder: vi.fn().mockResolvedValue(null),
     modify: vi.fn().mockResolvedValue(null),
     delete: vi.fn().mockResolvedValue(null),
     getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -23,15 +24,16 @@ function createMockPlugin() {
   };
 }
 
-function createMockBridge() {
+function createMockBridge(remoteFiles?: RemoteFile[]) {
+  const defaultFiles: RemoteFile[] = [
+    { token: 'ftok1', name: 'note.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
+    { token: 'ftok2', name: 'doc', type: 'docx', modifiedAt: '2026-05-04T13:00:00Z' },
+    { token: 'ftok3', name: 'sheet', type: 'sheet', modifiedAt: '2026-05-04T14:00:00Z' },
+    { token: 'ftok4', name: 'image.png', type: 'file', modifiedAt: '2026-05-04T15:00:00Z' },
+  ];
   return {
-    listRemoteFiles: vi.fn().mockResolvedValue([
-      { token: 'ftok1', name: 'note.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
-      { token: 'ftok2', name: 'doc', type: 'docx', modifiedAt: '2026-05-04T13:00:00Z' },
-      { token: 'ftok3', name: 'sheet', type: 'sheet', modifiedAt: '2026-05-04T14:00:00Z' },
-      { token: 'ftok4', name: 'image.png', type: 'file', modifiedAt: '2026-05-04T15:00:00Z' },
-      { token: 'ftok5', name: 'subfolder', type: 'folder', modifiedAt: '2026-05-04T16:00:00Z' },
-    ] as RemoteFile[]),
+    listRemoteFiles: vi.fn().mockResolvedValue(defaultFiles),
+    listAllFilesRecursive: vi.fn().mockResolvedValue(remoteFiles || defaultFiles),
     downloadFile: vi.fn().mockResolvedValue(undefined),
     exportDoc: vi.fn().mockResolvedValue('# Exported content'),
     uploadFile: vi.fn().mockResolvedValue({ fileToken: 'newFtok', url: '' }),
@@ -152,9 +154,9 @@ describe('PullService', () => {
   });
 
   describe('pullAll', () => {
-    it('calls listRemoteFiles with folder token', async () => {
+    it('calls listAllFilesRecursive with folder token', async () => {
       await service.pullAll();
-      expect(mockBridge.listRemoteFiles).toHaveBeenCalledWith(folderToken);
+      expect(mockBridge.listAllFilesRecursive).toHaveBeenCalledWith(folderToken);
     });
 
     it('processes online docs via converter', async () => {
@@ -211,7 +213,7 @@ describe('PullService', () => {
     });
 
     it('handles errors gracefully and continues', async () => {
-      mockBridge.listRemoteFiles = vi.fn().mockRejectedValue(new Error('List failed'));
+      mockBridge.listAllFilesRecursive = vi.fn().mockRejectedValue(new Error('List failed'));
       const result = await service.pullAll();
       expect(result.failCount).toBe(1);
       expect(result.errors).toHaveLength(1);
@@ -243,6 +245,47 @@ describe('PullService', () => {
       expect(mockBridge.downloadFile).not.toHaveBeenCalled();
     });
 
+    it('writes online doc from subfolder as {path}/{name}.md', async () => {
+      const subFiles: RemoteFile[] = [
+        { token: 'docx_sub', name: 'testonlinedoc', type: 'docx', modifiedAt: '2026-05-04T12:00:00Z', path: '_e2etest' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(subFiles);
+      mockTracker.getFileState = vi.fn().mockReturnValue(null);
+      await service.pullAll();
+      expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
+        '_e2etest/testonlinedoc.md',
+        expect.any(String),
+      );
+    });
+
+    it('writes regular .md file from subfolder with path prefix', async () => {
+      const subFiles: RemoteFile[] = [
+        { token: 'ftok_sub', name: 'nested.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z', path: 'deep/folder' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(subFiles);
+      mockTracker.getFileState = vi.fn().mockReturnValue({
+        localPath: 'deep/folder/nested.md', feishuFileToken: 'ftok_sub',
+        lastSyncedAt: 1000, lastLocalMtime: 1000, isOnlineDoc: false,
+      });
+      await service.pullAll();
+      expect(mockBridge.downloadFile).toHaveBeenCalledWith(
+        'ftok_sub',
+        'deep/folder/nested.md',
+        '/mock/vault',
+      );
+    });
+
+    it('skips discoverNewFiles=false even for subfolder files', async () => {
+      settings.discoverNewFiles = false;
+      const subFiles: RemoteFile[] = [
+        { token: 'docx_new', name: 'newdoc', type: 'docx', modifiedAt: '2026-05-04T12:00:00Z', path: '_e2etest' },
+      ];
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue(subFiles);
+      mockTracker.getFileState = vi.fn().mockReturnValue(null);
+      await service.pullAll();
+      expect(mockConverter.convert).not.toHaveBeenCalled();
+    });
+
     it('writes pulled file content to vault on conflict', async () => {
       mockTracker.getFileState = vi.fn().mockReturnValue({
         localPath: 'note.md', feishuFileToken: 'ftok1',
@@ -262,7 +305,7 @@ describe('PullService', () => {
     });
 
     it('returns not-found when token not in remote list', async () => {
-      mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([] as RemoteFile[]);
+      mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([] as RemoteFile[]);
       const result = await service.pullFile('nonexistent');
       expect(result.success).toBe(false);
     });

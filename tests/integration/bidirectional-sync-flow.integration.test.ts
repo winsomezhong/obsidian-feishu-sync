@@ -9,6 +9,7 @@ function createMockPlugin() {
     adapter: { getBasePath: vi.fn().mockReturnValue('/mock/vault') },
     read: vi.fn().mockResolvedValue('# Existing local content'),
     create: vi.fn().mockResolvedValue(null),
+    createFolder: vi.fn().mockResolvedValue(null),
     modify: vi.fn().mockResolvedValue(null),
     delete: vi.fn().mockResolvedValue(null),
     getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -19,6 +20,7 @@ function createMockPlugin() {
 function createMinimalBridge() {
   return {
     listRemoteFiles: vi.fn().mockResolvedValue([]),
+    listAllFilesRecursive: vi.fn().mockResolvedValue([]),
     downloadFile: vi.fn().mockResolvedValue(undefined),
     exportDoc: vi.fn().mockResolvedValue('# Exported content'),
     uploadFile: vi.fn().mockResolvedValue({ fileToken: 'newFtok', url: '' }),
@@ -74,7 +76,7 @@ describe('PullService cross-module integration', () => {
 
   // S8: Pull regular .md file
   it('pulls a regular .md file via downloadFile when decision is pull (S8)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([
       { token: 'ftok1', name: 'remote-note.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
     ]);
     mockTracker.getFileState = vi.fn().mockReturnValue(null);
@@ -82,7 +84,7 @@ describe('PullService cross-module integration', () => {
 
     const result = await service.pullAll();
 
-    expect(mockBridge.downloadFile).toHaveBeenCalledWith('ftok1', expect.stringContaining('remote-note.md'));
+    expect(mockBridge.downloadFile).toHaveBeenCalledWith('ftok1', expect.stringContaining('remote-note.md'), expect.any(String));
     expect(mockTracker.updateFileState).toHaveBeenCalled();
     expect(result.successCount).toBe(1);
     expect(result.pulls).toHaveLength(1);
@@ -90,7 +92,7 @@ describe('PullService cross-module integration', () => {
 
   // S9: Online docx -> local .md with frontmatter
   it('converts online docx to .md with frontmatter via converter (S9)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([
       { token: 'docToken', name: 'my-doc', type: 'docx', modifiedAt: '2026-05-04T12:00:00Z' },
     ]);
 
@@ -98,7 +100,7 @@ describe('PullService cross-module integration', () => {
 
     expect(mockBridge.exportDoc).toHaveBeenCalledWith('docToken', 'docx');
     expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
-      'docToken.md',
+      'my-doc.md',
       expect.stringContaining('feishu_doc_token: "docToken"'),
     );
     expect(result.successCount).toBe(1);
@@ -106,7 +108,7 @@ describe('PullService cross-module integration', () => {
 
   // S10: Conflict generates .conflict.md result
   it('reports conflict in PullBatchResult when both sides changed (S10)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([
       { token: 'ftok1', name: 'note.md', type: 'file', modifiedAt: '2026-05-04T14:00:00Z' },
     ]);
     mockTracker.getFileState = vi.fn().mockReturnValue({
@@ -136,7 +138,7 @@ describe('PullService cross-module integration', () => {
 
   // S11: Online doc local-only changes not pushed
   it('skips push for online doc local-only changes (S11)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([
       { token: 'docToken', name: 'my-doc', type: 'docx', modifiedAt: '2026-05-04T10:00:00Z' },
     ]);
     mockTracker.getFileState = vi.fn().mockReturnValue({
@@ -154,7 +156,7 @@ describe('PullService cross-module integration', () => {
 
   // S12: syncDeletesToLocal=false preserves local files
   it('does not delete local files when syncDeletesToLocal is false (S12)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([]);
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([]);
     mockTracker.getAllFiles = vi.fn().mockReturnValue([
       {
         localPath: 'orphan.md',
@@ -172,7 +174,7 @@ describe('PullService cross-module integration', () => {
 
   // S13: Single file pull by token
   it('pullFile pulls a single file by token (S13)', async () => {
-    mockBridge.listRemoteFiles = vi.fn().mockResolvedValue([
+    mockBridge.listAllFilesRecursive = vi.fn().mockResolvedValue([
       { token: 'ftok1', name: 'single-pull.md', type: 'file', modifiedAt: '2026-05-04T12:00:00Z' },
     ]);
     mockTracker.getFileState = vi.fn().mockReturnValue(null);

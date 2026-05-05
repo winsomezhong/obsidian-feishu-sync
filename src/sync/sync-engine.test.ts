@@ -38,6 +38,7 @@ function createMockDeps() {
     bridge: {
       uploadFile: vi.fn(),
       deleteFile: vi.fn(),
+      deleteFolder: vi.fn(),
       moveFile: vi.fn(),
       createFolder: vi.fn(),
       findSubfolder: vi.fn(),
@@ -446,6 +447,53 @@ describe('SyncEngine', () => {
     });
   });
 
+  describe('findFolderTokenByPath', () => {
+    it('returns root token for empty path', async () => {
+      // @ts-ignore
+      const result = await engine.findFolderTokenByPath('');
+      expect(result).toBe('root-token');
+      expect(deps.bridge.findSubfolder).not.toHaveBeenCalled();
+    });
+
+    it('finds single-segment folder under root', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue('fld_clippings');
+      // @ts-ignore
+      const result = await engine.findFolderTokenByPath('Clippings');
+      expect(result).toBe('fld_clippings');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'Clippings');
+    });
+
+    it('traverses folder segments and returns final token', async () => {
+      deps.bridge.findSubfolder
+        .mockResolvedValueOnce('fld_clippings')
+        .mockResolvedValueOnce('fld_notes');
+      // @ts-ignore
+      const result = await engine.findFolderTokenByPath('Clippings/notes');
+      expect(result).toBe('fld_notes');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'Clippings');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('fld_clippings', 'notes');
+    });
+
+    it('traverses multiple segments', async () => {
+      deps.bridge.findSubfolder
+        .mockResolvedValueOnce('fld_proj')
+        .mockResolvedValueOnce('fld_sub');
+      // @ts-ignore
+      const result = await engine.findFolderTokenByPath('projects/sub');
+      expect(result).toBe('fld_sub');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'projects');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('fld_proj', 'sub');
+    });
+
+    it('returns null when any segment is not found', async () => {
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      // @ts-ignore
+      const result = await engine.findFolderTokenByPath('nonexistent/notes');
+      expect(result).toBeNull();
+      expect(deps.bridge.createFolder).not.toHaveBeenCalled();
+    });
+  });
+
   describe('onFileRename', () => {
     it('moves drive file and updates state', async () => {
       const mockFile = {
@@ -464,6 +512,86 @@ describe('SyncEngine', () => {
       expect(deps.tracker.removeFileState).toHaveBeenCalledWith('inbox/note.md');
       expect(deps.bridge.moveFile).toHaveBeenCalledWith('ftok_move', 'fld_archive');
       expect(deps.tracker.updateFileState).toHaveBeenCalledWith('archive/note.md', 'ftok_move', 3000);
+    });
+
+    it('deletes old subfolder after rename from subfolder', async () => {
+      const mockFile = {
+        path: 'archive/note.md',
+        name: 'note.md',
+        extension: 'md',
+        stat: { mtime: 3000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_move' });
+      deps.bridge.findSubfolder
+        .mockResolvedValueOnce('fld_archive')   // ensureFolderPath: find archive
+        .mockResolvedValueOnce('fld_inbox');     // findFolderTokenByPath: find inbox
+      deps.bridge.deleteFolder.mockResolvedValue(undefined);
+
+      // @ts-ignore
+      await engine.onFileRename(mockFile, 'inbox/note.md');
+
+      expect(deps.bridge.moveFile).toHaveBeenCalledWith('ftok_move', 'fld_archive');
+      expect(deps.bridge.findSubfolder).toHaveBeenCalledWith('root-token', 'inbox');
+      expect(deps.bridge.deleteFolder).toHaveBeenCalledWith('fld_inbox');
+    });
+
+    it('does not fail when old subfolder not found after rename', async () => {
+      const mockFile = {
+        path: 'archive/note.md',
+        name: 'note.md',
+        extension: 'md',
+        stat: { mtime: 3000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_move' });
+      deps.bridge.findSubfolder
+        .mockResolvedValueOnce('fld_archive')   // ensureFolderPath: find archive
+        .mockResolvedValueOnce(null);            // findFolderTokenByPath: inbox not found
+
+      // @ts-ignore
+      await engine.onFileRename(mockFile, 'inbox/note.md');
+
+      expect(deps.bridge.moveFile).toHaveBeenCalled();
+      expect(deps.bridge.deleteFolder).not.toHaveBeenCalled();
+    });
+
+    it('skips folder cleanup when file was at root level', async () => {
+      const mockFile = {
+        path: 'archive/note.md',
+        name: 'note.md',
+        extension: 'md',
+        stat: { mtime: 3000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_root' });
+      deps.bridge.findSubfolder.mockResolvedValue(null);
+      deps.bridge.createFolder.mockResolvedValue('fld_archive');
+
+      // @ts-ignore
+      await engine.onFileRename(mockFile, 'note.md');
+
+      expect(deps.bridge.moveFile).toHaveBeenCalledWith('ftok_root', 'fld_archive');
+      expect(deps.bridge.deleteFolder).not.toHaveBeenCalled();
+    });
+
+    it('continues rename flow when deleteFolder fails', async () => {
+      const mockFile = {
+        path: 'archive/note.md',
+        name: 'note.md',
+        extension: 'md',
+        stat: { mtime: 3000 },
+      } as any;
+      deps.tracker.getFileState.mockReturnValue({ feishuFileToken: 'ftok_move' });
+      deps.bridge.findSubfolder
+        .mockResolvedValueOnce('fld_archive')   // ensureFolderPath: find archive
+        .mockResolvedValueOnce('fld_inbox');     // findFolderTokenByPath: find inbox
+      deps.bridge.deleteFolder.mockRejectedValue(new Error('permission denied'));
+
+      // @ts-ignore
+      await engine.onFileRename(mockFile, 'inbox/note.md');
+
+      expect(deps.bridge.moveFile).toHaveBeenCalled();
+      expect(deps.bridge.deleteFolder).toHaveBeenCalledWith('fld_inbox');
+      // Rename flow should still succeed — folder cleanup is best-effort
+      expect(deps.tracker.updateFileState).toHaveBeenCalled();
     });
   });
 

@@ -90,3 +90,39 @@ export function resolveFolderPath(folderPath: string): string | null {
   if (folders.length === 0) return null;
   return folders[0].result_meta?.token ?? null;
 }
+
+export function uploadFile(localPath: string, folderToken: string): string {
+  const name = path.basename(localPath);
+  const dir = path.dirname(localPath);
+  const stdout = execSync(
+    `${e2eConfig.larkExe} drive +upload --file "${name}" --folder-token "${folderToken}" --name "${name}"`,
+    { encoding: 'utf-8', timeout: 30000, cwd: dir },
+  ) as unknown as string;
+  const parsed = JSON.parse(stdout);
+  return parsed.data.file_token;
+}
+
+export function importDocx(localPath: string, folderToken: string): string {
+  const name = path.basename(localPath);
+  const dir = path.dirname(localPath);
+  // Use drive +import to convert a local file into a Feishu docx in the target folder
+  const stdout = execSync(
+    `${e2eConfig.larkExe} drive +import --file "${name}" --folder-token "${folderToken}" --type "docx"`,
+    { encoding: 'utf-8', timeout: 30000, cwd: dir },
+  ) as unknown as string;
+  // The output may contain progress messages before the final JSON.
+  // Search for the last JSON object containing a file_token.
+  const lines = stdout.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      const token = parsed.data?.file_token
+        || parsed.data?.fileToken
+        || parsed.data?.import_task?.file_token
+        || parsed.data?.import_task?.fileToken
+        || parsed.data?.task?.file_token;
+      if (token) return token;
+    } catch {}
+  }
+  throw new Error(`importDocx: could not find file_token in response:\n${stdout.slice(0, 500)}`);
+}

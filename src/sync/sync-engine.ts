@@ -221,6 +221,20 @@ export class SyncEngine {
     );
   }
 
+  private async findFolderTokenByPath(folderPath: string): Promise<string | null> {
+    const rootToken = await this.getResolvedFolderToken();
+    const segments = folderPath.split('/').filter(Boolean);
+    if (segments.length === 0) return rootToken;
+
+    let currentParentToken = rootToken;
+    for (const segment of segments) {
+      const token = await this.bridge.findSubfolder(currentParentToken, segment);
+      if (!token) return null;
+      currentParentToken = token;
+    }
+    return currentParentToken;
+  }
+
   private async onFileDelete(file: TFile): Promise<void> {
     if (file.extension !== 'md') return;
     if (file.path.endsWith('.conflict.md')) return;
@@ -256,6 +270,20 @@ export class SyncEngine {
       } catch (err) {
         console.error(`Failed to move drive file for ${file.path}:`, err);
         this.onAutoSyncResult?.({ path: file.path, success: false, error: err as Error });
+      }
+      // Best-effort cleanup: delete the old parent folder if it's now empty
+      try {
+        const segments = oldPath.split('/');
+        segments.pop(); // remove filename
+        const oldParentPath = segments.join('/');
+        if (oldParentPath) {
+          const oldFolderToken = await this.findFolderTokenByPath(oldParentPath);
+          if (oldFolderToken) {
+            await this.bridge.deleteFolder(oldFolderToken);
+          }
+        }
+      } catch (err) {
+        console.warn(`Feishu Sync: folder cleanup failed for ${oldPath}`, err);
       }
     }
   }

@@ -1,4 +1,7 @@
 import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import type { UploadResult, PreflightResult, RemoteFile } from '../types';
 
 export class CliNotFoundError extends Error {
@@ -82,6 +85,7 @@ export const REQUIRED_SCOPES = [
   'sheets:spreadsheet:read',
   'base:app:read',
   'search:docs:read',
+  'space:document:retrieve',
 ] as const;
 
 /** Maps each required scope to its Feishu business domain key. */
@@ -93,6 +97,7 @@ export const SCOPE_DOMAIN_MAP: Record<string, string> = {
   'sheets:spreadsheet:read': 'sheets',
   'base:app:read': 'base',
   'search:docs:read': 'docs',
+  'space:document:retrieve': 'drive',
 };
 
 export class FeishuCliBridge {
@@ -223,14 +228,17 @@ export class FeishuCliBridge {
     await this.withRetry(() => this.executeCommand(cmd));
   }
 
+  async deleteFolder(folderToken: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +delete --file-token "${folderToken}" --type folder --yes`;
+    await this.withRetry(() => this.executeCommand(cmd));
+  }
+
   async moveFile(fileToken: string, targetFolderToken: string): Promise<void> {
     const cmd = `${this.config.cliPath} drive +move --file-token "${fileToken}" --folder-token "${targetFolderToken}" --type file`;
     await this.withRetry(() => this.executeCommand(cmd));
   }
 
   async resolveFolderToken(folderPath: string): Promise<string> {
-    // Strip leading / for search API compatibility — query is text-based,
-    // and /obsvault won't match a folder named "obsvault"
     const query = folderPath.replace(/^\/+/, '');
     const cmd = `${this.config.cliPath} drive +search --query ${this.escapeArg(query)} --doc-types folder`;
     return this.withRetry(async () => {
@@ -246,7 +254,6 @@ export class FeishuCliBridge {
         if (!results || !Array.isArray(results) || results.length === 0) {
           throw new FolderNotFoundError(folderPath);
         }
-        // Filter to only FOLDER type results
         const folders = results.filter(
           (r: any) => r?.result_meta?.doc_types === 'FOLDER',
         );
@@ -280,9 +287,29 @@ export class FeishuCliBridge {
         token: f.token,
         name: f.name,
         type: f.type as RemoteFile['type'],
-        modifiedAt: f.modified_at,
+        modifiedAt: f.modified_time,
       }));
     });
+  }
+
+  async listAllFilesRecursive(folderToken: string, parentPath?: string): Promise<RemoteFile[]> {
+    const files = await this.listRemoteFiles(folderToken);
+    const result: RemoteFile[] = [];
+
+    for (const file of files) {
+      if (file.type === 'folder') {
+        const childPath = parentPath ? `${parentPath}/${file.name}` : file.name;
+        const children = await this.listAllFilesRecursive(file.token, childPath);
+        result.push(...children);
+      } else {
+        result.push({
+          ...file,
+          path: parentPath || undefined,
+        });
+      }
+    }
+
+    return result;
   }
 
   async getFileMetadata(fileToken: string): Promise<RemoteFile> {
@@ -297,20 +324,26 @@ export class FeishuCliBridge {
       token: f.token,
       name: f.name,
       type: f.type as RemoteFile['type'],
-      modifiedAt: f.modified_at,
+      modifiedAt: f.modified_time,
     };
   }
 
-  async downloadFile(fileToken: string, outputPath: string): Promise<void> {
-    const cmd = `${this.config.cliPath} drive +download --file-token "${fileToken}" --output "${outputPath}"`;
-    await this.withRetry(() => this.executeCommand(cmd));
+  async downloadFile(fileToken: string, outputRelPath: string, cwd?: string): Promise<void> {
+    const cmd = `${this.config.cliPath} drive +download --file-token "${fileToken}" --output "${outputRelPath}" --overwrite`;
+    await this.withRetry(() => this.executeCommand(cmd, cwd));
   }
 
   async exportDoc(docToken: string, docType: string): Promise<string> {
-    const cmd = `${this.config.cliPath} drive +export --file-token "${docToken}" --doc-type "${docType}" --output-format "md"`;
-    return this.withRetry(async () => {
-      return await this.executeCommand(cmd);
-    });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feishu-export-'));
+    try {
+      const cmd = `${this.config.cliPath} drive +export --token "${docToken}" --doc-type "${docType}" --file-extension "markdown"`;
+      const stdout = await this.withRetry(() => this.executeCommand(cmd, tmpDir));
+      const result = JSON.parse(stdout);
+      const filePath = result.data.saved_path;
+      return fs.readFileSync(filePath, 'utf-8');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   }
 
   private escapeArg(arg: string): string {

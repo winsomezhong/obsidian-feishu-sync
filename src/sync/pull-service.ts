@@ -27,7 +27,7 @@ export class PullService {
 
   constructor(
     private plugin: Plugin,
-    private bridge: Pick<FeishuCliBridge, 'listRemoteFiles' | 'downloadFile' | 'exportDoc' | 'uploadFile'>,
+    private bridge: Pick<FeishuCliBridge, 'listRemoteFiles' | 'listAllFilesRecursive' | 'downloadFile' | 'exportDoc' | 'uploadFile'>,
     private tracker: Pick<SyncStatusTracker, 'getFileState' | 'updateFileState' | 'removeFileState' | 'getAllFiles'>,
     private resolver: Pick<ConflictResolver, 'resolveBidirectional'>,
     private converter: OnlineDocConverter,
@@ -62,7 +62,7 @@ export class PullService {
 
     let remoteFiles: RemoteFile[];
     try {
-      remoteFiles = await this.bridge.listRemoteFiles(folderToken);
+      remoteFiles = await this.bridge.listAllFilesRecursive(folderToken);
     } catch (err) {
       result.errors.push({ path: '(list)', error: (err as Error).message });
       result.failCount++;
@@ -106,7 +106,7 @@ export class PullService {
     if (!folderToken) return { success: false, error: 'No folder token configured' };
 
     try {
-      const remoteFiles = await this.bridge.listRemoteFiles(folderToken);
+      const remoteFiles = await this.bridge.listAllFilesRecursive(folderToken);
       const file = remoteFiles.find(f => f.token === fileToken);
       if (!file) return { success: false, error: `File not found: ${fileToken}` };
 
@@ -135,7 +135,8 @@ export class PullService {
     // For regular files, only process .md files
     if (!isOnlineDoc && !file.name.endsWith('.md')) return;
 
-    const localFileName = isOnlineDoc ? `${file.token}.md` : file.name;
+    const prefix = file.path ? `${file.path}/` : '';
+    const localFileName = isOnlineDoc ? `${prefix}${file.name}.md` : `${prefix}${file.name}`;
 
     const state = this.tracker.getFileState(localFileName);
 
@@ -201,9 +202,18 @@ export class PullService {
     localFileName: string,
     result: PullBatchResult,
   ): Promise<void> {
+    // Ensure parent directory exists before download
+    const dirPath = localFileName.split('/').slice(0, -1).join('/');
+    if (dirPath) {
+      try {
+        await this.plugin.app.vault.createFolder(dirPath);
+      } catch {
+        // folder may already exist
+      }
+    }
+
     const vaultBasePath = (this.plugin.app.vault.adapter as any).getBasePath();
-    const localPath = `${vaultBasePath}/${localFileName}`;
-    await this.bridge.downloadFile(file.token, localPath);
+    await this.bridge.downloadFile(file.token, localFileName, vaultBasePath);
 
     this.tracker.updateFileState(localFileName, file.token, Date.now(), {
       isOnlineDoc: false,
